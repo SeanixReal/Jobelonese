@@ -1,0 +1,509 @@
+import { useEffect, useMemo, useState } from "react";
+import type { ChangeEvent, FormEvent } from "react";
+import {
+  supabase,
+  getCurrentProfile,
+  getMyTickets,
+  createTicket,
+  getLabs,
+  getStations,
+  signOut,
+} from "./lib.ts";
+import type { Lab, User, Station, TicketStatus, TicketWithDetails } from "./lib.ts";
+import "./StudentPortal.css";
+
+const ISSUE_TYPES = [
+  "Hardware (monitor, mouse, keyboard)",
+  "No internet / network",
+  "Software / application",
+  "Projector / AV equipment",
+  "Other",
+];
+
+const PROGRESS_STEPS: { key: TicketStatus; label: string }[] = [
+  { key: "open", label: "Submitted" },
+  { key: "in_progress", label: "In progress" },
+  { key: "resolved", label: "Resolved" },
+];
+
+const STATUS_LABEL: Record<TicketStatus, string> = {
+  open: "Open",
+  in_progress: "In progress",
+  resolved: "Resolved",
+};
+
+const STATUS_CLASS: Record<TicketStatus, string> = {
+  open: "status-open",
+  in_progress: "status-progress",
+  resolved: "status-resolved",
+};
+
+function initials(fullName?: string) {
+  if (!fullName) return "ST";
+  return fullName
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("");
+}
+
+function locationText(ticket: TicketWithDetails) {
+  const lab = ticket.labs?.name ?? "Unknown lab";
+  const station = ticket.stations?.station_number;
+  return station ? `${lab.toUpperCase()} · STATION ${station}` : lab.toUpperCase();
+}
+
+export default function StudentPortal() {
+  // ---------- data state ----------
+  const [user, setUser] = useState<User | null>(null);
+  const [email, setEmail] = useState("");
+  const [tickets, setTickets] = useState<TicketWithDetails[]>([]);
+  const [labs, setLabs] = useState<Lab[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // ---------- report form state ----------
+  const [labId, setLabId] = useState("");
+  const [stations, setStations] = useState<Station[]>([]);
+  const [stationId, setStationId] = useState("");
+  const [category, setCategory] = useState("");
+  const [description, setDescription] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  const loadAll = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [userData, userResult, ticketData, labData] = await Promise.all([
+        getCurrentProfile(),
+        supabase.auth.getUser(),
+        getMyTickets(),
+        getLabs(),
+      ]);
+      setUser(userData);
+      setEmail(userResult.data.user?.email ?? "");
+      setTickets(ticketData);
+      setLabs(labData);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load your dashboard.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadAll();
+  }, []);
+
+  useEffect(() => {
+    if (!labId) {
+      setStations([]);
+      setStationId("");
+      return;
+    }
+    getStations(labId)
+      .then(setStations)
+      .catch((err) => setFormError(err.message));
+  }, [labId]);
+
+  const stats = useMemo(
+    () => ({
+      open: tickets.filter((t) => t.status === "open").length,
+      inProgress: tickets.filter((t) => t.status === "in_progress").length,
+      resolved: tickets.filter((t) => t.status === "resolved").length,
+    }),
+    [tickets]
+  );
+
+  const focusTicket = useMemo(
+    () => tickets.find((t) => t.status === "in_progress") ?? null,
+    [tickets]
+  );
+
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setFormError(null);
+
+    if (!labId || !category || !description) {
+      setFormError("Fill in the required fields before submitting.");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await createTicket({
+        labId,
+        stationId: stationId || undefined,
+        category,
+        description,
+      });
+      setLabId("");
+      setStationId("");
+      setCategory("");
+      setDescription("");
+      await loadAll();
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "Something went wrong.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut();
+      window.location.reload(); 
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Error logging out.");
+    }
+  };
+
+  // Synchronized with updated User property model logic
+  const derivedFullName = user?.fullname || email.split("@")[0] || "User";
+  const firstName = derivedFullName.split(" ")[0];
+  
+  // Safe extraction of the creation timestamp across DB records and runtime auth instances
+  const activeTimestamp = user?.created_at || user?.auth_created_at;
+
+  if (loading) {
+    return <div className="portal-loading">Loading your dashboard...</div>;
+  }
+
+  if (error || !user) {
+    return (
+      <div className="portal-loading">
+        {error ?? "Couldn't load your account profile details."}{" "}
+        <button className="btn btn-ghost" onClick={loadAll}>
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="shell">
+      {/* ===================== SIDEBAR ===================== */}
+      <aside className="sidebar">
+        <div className="logo">
+          <div className="logo-mark">TF</div>
+          TechFix<span className="logo-sub">CIT-U</span>
+        </div>
+
+        <div className="nav-group-label">Menu</div>
+        <a className="nav-item active" href="#dashboard">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <rect x="3" y="3" width="7" height="9" rx="1.5" />
+            <rect x="14" y="3" width="7" height="5" rx="1.5" />
+            <rect x="14" y="12" width="7" height="9" rx="1.5" />
+            <rect x="3" y="16" width="7" height="5" rx="1.5" />
+          </svg>
+          Dashboard
+        </a>
+        <a className="nav-item" href="#report">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M12 5v14M5 12h14" />
+          </svg>
+          Report an issue
+        </a>
+        <a className="nav-item" href="#tickets">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v3a2 2 0 0 0 0 4v3a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-3a2 2 0 0 0 0-4V7Z" />
+          </svg>
+          My tickets
+          {stats.open > 0 && <span className="nav-badge">{stats.open}</span>}
+        </a>
+        <a className="nav-item" href="#profile">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="8" r="4" />
+            <path d="M4 20c0-4 4-6 8-6s8 2 8 6" />
+          </svg>
+          Profile
+        </a>
+
+        <div className="sidebar-footer">
+          <div className="mini-profile" style={{ marginBottom: "12px" }}>
+            <div className="avatar">{initials(derivedFullName)}</div>
+            <div>
+              <div className="mini-profile-name">{derivedFullName}</div>
+              <div className="mini-profile-role" style={{ textTransform: "uppercase" }}>
+                {user?.role ?? "STUDENT"}
+              </div>
+            </div>
+          </div>
+          
+          <button 
+            onClick={handleLogout} 
+            className="btn btn-ghost nav-item" 
+            style={{ width: "100%", justifyContent: "flex-start", color: "#ff4d4d", gap: "12px", border: "none", cursor: "pointer" }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+              <polyline points="16 17 21 12 16 7" />
+              <line x1="21" y1="12" x2="9" y2="12" />
+            </svg>
+            Sign Out
+          </button>
+        </div>
+      </aside>
+
+      {/* ===================== MAIN ===================== */}
+      <main className="main">
+        <div className="topbar">
+          <div>
+            <div className="page-eyebrow">Welcome back</div>
+            <h1 className="page-title">Hi, {firstName}</h1>
+            <p className="page-sub">Here's what's happening with your reported issues.</p>
+          </div>
+          <a href="#report" className="btn btn-primary">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            Report an issue
+          </a>
+        </div>
+
+        {/* STAT CARDS */}
+        <div className="stats-row">
+          <div className="stat-card">
+            <div className="stat-label">Open tickets</div>
+            <div className="stat-value accent">{stats.open}</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-label">In progress</div>
+            <div className="stat-value blue">{stats.inProgress}</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-label">Resolved</div>
+            <div className="stat-value teal">{stats.resolved}</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-label">Total tickets</div>
+            <div className="stat-value">{tickets.length}</div>
+          </div>
+        </div>
+
+        <div className="content-grid">
+          {/* LEFT COLUMN */}
+          <div>
+            {/* REPORT ISSUE */}
+            <div className="card" id="report">
+              <div className="card-head">
+                <h2 className="card-title">Report an issue</h2>
+              </div>
+              <form onSubmit={handleSubmit}>
+                <div className="row-2">
+                  <div className="field">
+                    <label htmlFor="lab">Lab / room</label>
+                    <select
+                      id="lab"
+                      value={labId}
+                      onChange={(e: ChangeEvent<HTMLSelectElement>) => setLabId(e.target.value)}
+                      required
+                    >
+                      <option value="" disabled>
+                        Select a location
+                      </option>
+                      {labs.map((lab) => (
+                        <option key={lab.id} value={lab.id}>
+                          {lab.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="field">
+                    <label htmlFor="station">Station no.</label>
+                    <select
+                      id="station"
+                      value={stationId}
+                      onChange={(e: ChangeEvent<HTMLSelectElement>) => setStationId(e.target.value)}
+                      disabled={!labId || stations.length === 0}
+                    >
+                      <option value="">Not station-specific</option>
+                      {stations.map((station) => (
+                        <option key={station.id} value={station.id}>
+                          Station {station.station_number}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div className="field">
+                  <label htmlFor="category">Issue type</label>
+                  <select
+                    id="category"
+                    value={category}
+                    onChange={(e: ChangeEvent<HTMLSelectElement>) => setCategory(e.target.value)}
+                    required
+                  >
+                    <option value="" disabled>
+                      Select an issue type
+                    </option>
+                    {ISSUE_TYPES.map((type) => (
+                      <option key={type} value={type}>
+                        {type}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="field">
+                  <label htmlFor="desc">Description</label>
+                  <textarea
+                    id="desc"
+                    placeholder="Briefly describe what's wrong..."
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    required
+                  />
+                </div>
+
+                {formError && <p className="form-error">{formError}</p>}
+
+                <button type="submit" className="btn btn-primary" disabled={submitting}>
+                  {submitting ? "Submitting..." : "Submit ticket"}
+                </button>
+              </form>
+            </div>
+
+            {/* MY TICKETS */}
+            <div className="card" id="tickets">
+              <div className="card-head">
+                <h2 className="card-title">My tickets</h2>
+              </div>
+              <div>
+                {tickets.length === 0 && (
+                  <p className="empty-state">No tickets yet — report an issue to see it here.</p>
+                )}
+                {tickets.map((ticket) => (
+                  <div className="ticket-row" key={ticket.id}>
+                    <span className="ticket-id-badge">{ticket.ticket_code}</span>
+                    <div className="ticket-info">
+                      <p className="ticket-info-title">{ticket.category}</p>
+                      <span className="ticket-info-loc">{locationText(ticket)}</span>
+                    </div>
+                    <span className={`status-pill ${STATUS_CLASS[ticket.status]}`}>
+                      {STATUS_LABEL[ticket.status]}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* RIGHT COLUMN */}
+          <div>
+            {/* PROFILE CARD */}
+            <div className="card" id="profile">
+              <div className="card-head">
+                <h2 className="card-title">User Account</h2>
+              </div>
+              
+              <div className="profile-header" style={{ marginBottom: "20px" }}>
+                <div className="avatar-lg">{initials(derivedFullName)}</div>
+                <div>
+                  <p className="profile-name">{derivedFullName}</p>
+                  <span className="profile-role" style={{ textTransform: "uppercase" }}>
+                    {user?.role ?? "STUDENT"}
+                  </span>
+                </div>
+              </div>
+
+              <div className="profile-detail">
+                <span className="profile-detail-label">Email Address</span>
+                <span className="profile-detail-value">{email || "Not Found"}</span>
+              </div>
+
+              <div className="profile-detail">
+                <span className="profile-detail-label">System Role Assigned</span>
+                <span className="profile-detail-value" style={{ textTransform: "capitalize" }}>
+                  {user?.role?.replace("_", " ") ?? "Student"}
+                </span>
+              </div>
+
+              <div className="profile-detail">
+                <span className="profile-detail-label">Student / Staff ID</span>
+                <span className="profile-detail-value">
+                  {user?.student_or_staff_id ?? "N/A"}
+                </span>
+              </div>
+
+              <div className="profile-detail">
+                <span className="profile-detail-label">Program / Department</span>
+                <span className="profile-detail-value">
+                  {user?.program ?? "None Assigned"}
+                </span>
+              </div>
+
+              <div className="profile-detail">
+                <span className="profile-detail-label">Created At</span>
+                <span className="profile-detail-value">
+                  {activeTimestamp ? new Date(activeTimestamp).toLocaleString() : "N/A"}
+                </span>
+              </div>
+
+              <div className="profile-detail">
+                <span className="profile-detail-label">Member Since</span>
+                <span className="profile-detail-value">
+                  {activeTimestamp ? (
+                    new Date(activeTimestamp).toLocaleDateString(undefined, {
+                      month: "long",
+                      day: "numeric",
+                      year: "numeric",
+                    })
+                  ) : (
+                    "N/A"
+                  )}
+                </span>
+              </div>
+            </div>
+
+            {/* IN-PROGRESS TICKET */}
+            {focusTicket && (
+              <div className="card">
+                <div className="card-head">
+                  <h2 className="card-title">In progress</h2>
+                  <span className="ticket-id-badge">{focusTicket.ticket_code}</span>
+                </div>
+                <p className="ticket-info-title" style={{ marginBottom: 2 }}>
+                  {focusTicket.category}
+                </p>
+                <span className="ticket-info-loc">{locationText(focusTicket)}</span>
+
+                <div className="progress-track">
+                  <div
+                    className="progress-fill"
+                    style={{
+                      width: `${
+                        ((PROGRESS_STEPS.findIndex((s) => s.key === focusTicket.status) + 1) /
+                          PROGRESS_STEPS.length) *
+                        100
+                      }%`,
+                    }}
+                  />
+                </div>
+                <div className="progress-steps">
+                  {PROGRESS_STEPS.map((step, i) => {
+                    const currentIndex = PROGRESS_STEPS.findIndex(
+                      (s) => s.key === focusTicket.status
+                    );
+                    return (
+                      <span
+                        key={step.key}
+                        className={`progress-step ${i < currentIndex ? "done" : ""} ${
+                          i === currentIndex ? "current" : ""
+                        }`}
+                      >
+                        {step.label}
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}
