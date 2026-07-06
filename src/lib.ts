@@ -22,50 +22,50 @@ export type TicketStatus = "open" | "in_progress" | "resolved";
 export type TicketPriority = "normal" | "high";
 export type HandlerRole = "nas" | "it";
 
-// Updated to perfectly align with your real physical table columns
-export interface User {
+export interface Profile {
   id: string;
   email: string;
-  fullname: string; // ✅ Changed from full_name to match your trigger function exactly
+  fullname: string;
   role: Role;
   student_or_staff_id: string | null;
   program: string | null;
-  created_at: string | null;
-  auth_created_at?: string; // ✅ Safe fallback tracking field from auth instance
+  created_at: string;
 }
 
+// Alias — some components import this as `User` instead of `Profile`.
+export type User = Profile;
+
 export interface Lab {
-  id: string;
+  id: number;
   name: string;
-  location: string | null;
-  station_count: number;
+  created_at: string;
 }
 
 export interface Station {
-  id: string;
-  lab_id: string;
-  station_number: number;
-  status: "operational" | "flagged" | "offline";
+  id: number;
+  lab_id: number;
+  station_number: string;
+  created_at: string;
 }
 
 export interface Ticket {
-  id: string;
-  ticket_code: string;
-  reported_by: string;
-  lab_id: string;
-  station_id: string | null;
+  id: string; // e.g. 'TCK-0851' — the primary key itself, DB-generated
+  user_id: string;
+  issue: string;
   category: string;
-  description: string;
   priority: TicketPriority;
   status: TicketStatus;
   current_handler: HandlerRole;
+  lab_id: number;
+  station_id: number | null;
+  assigned_to: string | null;
   created_at: string;
   resolved_at: string | null;
 }
 
 export interface TicketWithDetails extends Ticket {
   labs: { name: string } | null;
-  stations: { station_number: number } | null;
+  stations: { station_number: string } | null;
 }
 
 const TICKET_SELECT = "*, labs(name), stations(station_number)";
@@ -82,6 +82,12 @@ export interface SignUpInput {
   program?: string;
 }
 
+// Matches the sign-up form: full name, email, password, confirm password
+// (checked client-side before calling this), and role.
+// Note: the metadata key here is `full_name` because that's what your
+// handle_new_user() trigger reads via raw_user_meta_data->>'full_name' —
+// the trigger then writes it into the `fullname` column. The key and the
+// column are allowed to differ; that's intentional, not a bug.
 export async function signUp({
   fullName,
   email,
@@ -118,8 +124,7 @@ export async function signOut() {
   if (error) throw error;
 }
 
-// Updated return mapping to automatically bridge fallback auth data
-export async function getCurrentProfile(): Promise<User | null> {
+export async function getCurrentProfile(): Promise<Profile | null> {
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -127,18 +132,7 @@ export async function getCurrentProfile(): Promise<User | null> {
 
   const { data, error } = await supabase.from("users").select("*").eq("id", user.id).single();
   if (error) throw error;
-
-  if (data) {
-    // 1. Map `fullname` column back onto a common runtime value if needed
-    if (!data.fullname && user.user_metadata?.full_name) {
-      data.fullname = user.user_metadata.full_name;
-    }
-    // 2. Inject the bulletproof auth record timestamp into the state object 
-    // to guarantee "Created At" / "Member Since" never show N/A for older users
-    data.auth_created_at = user.created_at;
-  }
-
-  return data as User;
+  return data;
 }
 
 // =========================================================
@@ -148,10 +142,13 @@ export interface CreateTicketInput {
   labId: string;
   stationId?: string;
   category: string;
-  description: string;
+  issue: string;
   priority?: TicketPriority;
 }
 
+// Matches the "Report an issue" form: lab, station, issue type, description.
+// `id` is left out on purpose — the DB default (TCK-0001, TCK-0002, ...)
+// fills it in, per the sequence added in extend-tickets.sql.
 export async function createTicket(input: CreateTicketInput) {
   const {
     data: { user },
@@ -161,20 +158,22 @@ export async function createTicket(input: CreateTicketInput) {
   const { data, error } = await supabase
     .from("tickets")
     .insert({
-      reported_by: user.id,
-      lab_id: input.labId,
-      station_id: input.stationId ?? null,
+      user_id: user.id,
+      lab_id: Number(input.labId),
+      station_id: input.stationId ? Number(input.stationId) : null,
       category: input.category,
-      description: input.description,
+      issue: input.issue,
       priority: input.priority ?? "normal",
     })
-    .select()
+    .select(TICKET_SELECT)
     .single();
 
   if (error) throw error;
-  return data as Ticket;
+  return data as unknown as TicketWithDetails;
 }
 
+// "My tickets" list — joins lab/station names so the UI doesn't need
+// extra round-trips to display a location.
 export async function getMyTickets(): Promise<TicketWithDetails[]> {
   const { data, error } = await supabase
     .from("tickets")
@@ -185,6 +184,8 @@ export async function getMyTickets(): Promise<TicketWithDetails[]> {
   return data as unknown as TicketWithDetails[];
 }
 
+// NAS "Received tickets" queue — RLS already restricts this to tickets
+// where current_handler = 'nas' AND the caller has the nas role.
 export async function getNasQueue(): Promise<TicketWithDetails[]> {
   const { data, error } = await supabase
     .from("tickets")
@@ -196,6 +197,8 @@ export async function getNasQueue(): Promise<TicketWithDetails[]> {
   return data as unknown as TicketWithDetails[];
 }
 
+// IT "Received tickets" queue — includes both tickets forwarded by NAS
+// and (per RLS) anything else, since IT has full oversight.
 export async function getItQueue(): Promise<TicketWithDetails[]> {
   const { data, error } = await supabase
     .from("tickets")
@@ -207,50 +210,55 @@ export async function getItQueue(): Promise<TicketWithDetails[]> {
   return data as unknown as TicketWithDetails[];
 }
 
+// "Claim" button — works for both NAS and IT portals. Your real schema
+// has no separate ticket_assignments table, so this just sets
+// assigned_to directly on the ticket row.
 export async function claimTicket(ticketId: string) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) throw new Error("Not signed in.");
 
-  const { error: assignError } = await supabase
-    .from("ticket_assignments")
-    .insert({ ticket_id: ticketId, assigned_to: user.id });
-  if (assignError) throw assignError;
-
   const { data, error } = await supabase
     .from("tickets")
-    .update({ status: "in_progress" })
+    .update({ assigned_to: user.id, status: "in_progress" })
     .eq("id", ticketId)
-    .select()
+    .select(TICKET_SELECT)
     .single();
 
   if (error) throw error;
-  return data as Ticket;
+  return data as unknown as TicketWithDetails;
 }
 
+// "Mark resolved" — usable by whichever staff role currently holds the
+// ticket (RLS checks current_handler for NAS, allows anything for IT).
+// resolved_at is set automatically by the set_resolved_at trigger.
 export async function resolveTicket(ticketId: string) {
   const { data, error } = await supabase
     .from("tickets")
     .update({ status: "resolved" })
     .eq("id", ticketId)
-    .select()
+    .select(TICKET_SELECT)
     .single();
 
   if (error) throw error;
-  return data as Ticket;
+  return data as unknown as TicketWithDetails;
 }
 
+// "Forward to IT" — only valid while current_handler is still 'nas';
+// RLS's "NAS can update tickets in their queue" policy enforces that.
+// Puts the ticket back to 'open' and clears the NAS assignment so it
+// shows up as unclaimed in the IT queue.
 export async function forwardTicket(ticketId: string) {
   const { data, error } = await supabase
     .from("tickets")
-    .update({ current_handler: "it", status: "open" })
+    .update({ current_handler: "it", status: "open", assigned_to: null })
     .eq("id", ticketId)
-    .select()
+    .select(TICKET_SELECT)
     .single();
 
   if (error) throw error;
-  return data as Ticket;
+  return data as unknown as TicketWithDetails;
 }
 
 // =========================================================
@@ -266,7 +274,7 @@ export async function getStations(labId: string): Promise<Station[]> {
   const { data, error } = await supabase
     .from("stations")
     .select("*")
-    .eq("lab_id", labId)
+    .eq("lab_id", Number(labId))
     .order("station_number");
 
   if (error) throw error;
