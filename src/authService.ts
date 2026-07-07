@@ -5,15 +5,26 @@ export interface UserData {
   email: string;
   fullname?: string; // ✅ Aligned to lowercase match physical table column
   role?: 'student' | 'nas' | 'it' | 'cpe_faculty'; // ✅ Aligned to match underscore used in DB
+  student_or_staff_id?: string | null;
+  program?: string | null;
   created_at?: string; // ✅ Aligned to snake_case table column
 }
 
-function buildFallbackProfile(userId: string, email: string, fullname: string, role: string): UserData {
+function buildFallbackProfile(
+  userId: string,
+  email: string,
+  fullname: string,
+  role: string,
+  studentOrStaffId?: string | null,
+  program?: string | null
+): UserData {
   return {
     id: userId,
     email,
     fullname,
     role: role as UserData['role'],
+    student_or_staff_id: studentOrStaffId ?? null,
+    program: program ?? null,
     created_at: new Date().toISOString(),
   };
 }
@@ -38,7 +49,7 @@ function toUserFriendlyAuthError(error: unknown): Error {
     if (message.includes('User already registered')) {
       return new Error('This email is already registered. Please sign in instead.');
     }
-    
+
     return new Error(message || 'A database or server error occurred during authentication.');
   }
   return new Error('An unexpected connection error occurred.');
@@ -71,7 +82,14 @@ export async function signUp(
     if (!authData.user) throw new Error('User creation failed');
 
     // Safe fallback profile matching the interface structure
-    const profile = buildFallbackProfile(authData.user.id, email, fullName, role);
+    const profile = buildFallbackProfile(
+      authData.user.id,
+      email,
+      fullName,
+      role,
+      studentOrStaffId,
+      program
+    );
 
     return { success: true, user: authData.user, profile };
   } catch (error) {
@@ -102,7 +120,9 @@ export async function signIn(email: string, password: string) {
         data.user.id,
         data.user.email ?? email,
         (data.user.user_metadata?.full_name as string | undefined) ?? '',
-        (data.user.user_metadata?.role as string | undefined) ?? 'student'
+        (data.user.user_metadata?.role as string | undefined) ?? 'student',
+        (data.user.user_metadata?.student_or_staff_id as string | undefined) ?? null,
+        (data.user.user_metadata?.program as string | undefined) ?? null
       );
       console.warn('Profile lookup skipped; using fallback profile data.', profileError);
       return { success: true, user: data.user, profile: fallbackProfile };

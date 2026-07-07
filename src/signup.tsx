@@ -26,7 +26,7 @@ interface SignUpFormData {
   fullName: string;
   email: string;
   studentOrStaffId: string;
-  program: string; // 👈 Added program track field
+  program: string; // program (students) or department (staff/faculty)
   password: string;
   confirmPassword: string;
   role: Role | "";
@@ -44,7 +44,7 @@ export default function SignUp({ goTo }: SignUpProps) {
     fullName: "",
     email: "",
     studentOrStaffId: "",
-    program: "", // 👈 Initialized empty state variable
+    program: "",
     password: "",
     confirmPassword: "",
     role: "",
@@ -60,8 +60,9 @@ export default function SignUp({ goTo }: SignUpProps) {
 
   const handleRoleChange = (e: ChangeEvent<HTMLSelectElement>) => {
     const value = e.target.value as Role | "";
-    // Reset program choice if they toggle away from the student role option
-    setForm((prev) => ({ ...prev, role: value, program: value === "student" ? prev.program : "" }));
+    // Program is a fixed list for students; for every other role it's a free-text
+    // department, so clear it on role switch since the two aren't interchangeable.
+    setForm((prev) => ({ ...prev, role: value, program: "" }));
     setError(null);
   };
 
@@ -85,16 +86,19 @@ export default function SignUp({ goTo }: SignUpProps) {
       setError("Please select your academic program.");
       return;
     }
+    if (form.role !== "student" && !form.program) {
+      setError("Please enter your department.");
+      return;
+    }
 
     setLoading(true);
 
     try {
-      // Forwarding both state elements directly to your authentication routing service
       const result = await signUp(
-        form.email, 
-        form.password, 
-        form.fullName, 
-        form.role, 
+        form.email,
+        form.password,
+        form.fullName,
+        form.role,
         form.studentOrStaffId,
         form.program
       );
@@ -202,7 +206,7 @@ export default function SignUp({ goTo }: SignUpProps) {
               </select>
             </div>
 
-            {/* ===================== CONDITIONAL STUDENT PROGRAM SELECTION ===================== */}
+            {/* Students pick from a fixed list of CIT-U programs */}
             {form.role === "student" && (
               <div className="field animate-fade-in">
                 <label htmlFor="su-program">Degree Program</label>
@@ -223,6 +227,25 @@ export default function SignUp({ goTo }: SignUpProps) {
                     </option>
                   ))}
                 </select>
+              </div>
+            )}
+
+            {/* Every other role types in their department freely — there's no
+                fixed list of NAS/IT/faculty departments the way there is for
+                student programs. */}
+            {form.role !== "" && form.role !== "student" && (
+              <div className="field animate-fade-in">
+                <label htmlFor="su-department">Department</label>
+                <input
+                  id="su-department"
+                  name="program"
+                  type="text"
+                  placeholder="e.g., Computer Engineering Department"
+                  value={form.program}
+                  onChange={handleInputChange}
+                  required
+                  disabled={loading}
+                />
               </div>
             )}
 

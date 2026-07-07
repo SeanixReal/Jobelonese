@@ -3,13 +3,16 @@ import Home, { type View as BaseView } from "./home";
 import SignIn from "./signin";
 import SignUp from "./signup";
 import StudentPortal from "./studentportal";
-import { supabase } from "./lib.ts";
+import NasPortal from "./NasPortal";
+import { supabase, getCurrentProfile } from "./lib.ts";
+import type { Role } from "./lib.ts";
 import "./App.css";
 
 export type View = BaseView | "portal";
 
 function App() {
   const [view, setView] = useState<View>("home");
+  const [role, setRole] = useState<Role | null>(null);
   const [checkingSession, setCheckingSession] = useState(true);
 
   const goTo = (next: View) => {
@@ -17,18 +20,34 @@ function App() {
     window.scrollTo(0, 0);
   };
 
+  const syncSession = async (hasSession: boolean) => {
+    if (!hasSession) {
+      setRole(null);
+      setView("home");
+      return;
+    }
+    // Session exists — figure out which portal this account should land on.
+    try {
+      const profile = await getCurrentProfile();
+      setRole(profile?.role ?? null);
+    } catch {
+      setRole(null);
+    }
+    setView("portal");
+  };
+
   useEffect(() => {
-    // On first load, jump straight to the portal if there's already a
-    // signed-in session (e.g. the user refreshed the page).
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) setView("portal");
+    // On first load, jump straight to the right portal if there's already
+    // a signed-in session (e.g. the user refreshed the page).
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      await syncSession(!!session);
       setCheckingSession(false);
     });
 
-    // Keep view in sync with auth state after that: sign-in anywhere
-    // sends you to the portal, sign-out sends you home.
+    // Keep view/role in sync with auth state after that: sign-in anywhere
+    // sends you to the right portal, sign-out sends you home.
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setView(session ? "portal" : "home");
+      syncSession(!!session);
     });
 
     return () => listener.subscription.unsubscribe();
@@ -44,6 +63,25 @@ function App() {
     case "signup":
       return <SignUp goTo={goTo} />;
     case "portal":
+      if (role === "nas") return <NasPortal />;
+      if (role === "it") {
+        // IT portal isn't built yet — swap this for <ItPortal /> once it is.
+        return (
+          <div className="portal-loading">
+            IT portal isn't wired up yet.{" "}
+            <button
+              className="btn btn-ghost"
+              onClick={async () => {
+                await supabase.auth.signOut();
+              }}
+            >
+              Sign out
+            </button>
+          </div>
+        );
+      }
+      // student and cpe_faculty both use the student portal — both roles
+      // just report and track their own tickets, no queue to manage.
       return <StudentPortal />;
     case "home":
     default:
