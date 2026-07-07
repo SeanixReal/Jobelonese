@@ -8,13 +8,14 @@ interface SignUpProps {
   goTo: (view: View) => void;
 }
 
-export type Role = "student" | "nas" | "it" | "cpe-faculty";
+export type Role = "student" | "nas" | "it" | "cpe-faculty" | "admin";
 
 const ROLE_LABELS: Record<Role, string> = {
   student: "Student",
   nas: "NAS (Non-Academic Scholar)",
   it: "IT department",
   "cpe-faculty": "Cpe faculty",
+  admin: "Administrator",
 };
 
 const ROLE_OPTIONS = Object.keys(ROLE_LABELS) as Role[];
@@ -51,6 +52,7 @@ export default function SignUp({ goTo }: SignUpProps) {
   });
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [passcode, setPasscode] = useState("");
 
   const handleInputChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -80,6 +82,20 @@ export default function SignUp({ goTo }: SignUpProps) {
     }
     if (form.role === "") {
       setError("Select a role to continue.");
+      return;
+    }
+
+    // Validate registration passcodes for privileged roles
+    if (form.role === "nas" && passcode !== "NAS2026") {
+      setError("Invalid registration passcode for NAS Scholar.");
+      return;
+    }
+    if (form.role === "it" && passcode !== "IT2026") {
+      setError("Invalid registration passcode for IT Department.");
+      return;
+    }
+    if (form.role === "admin" && passcode !== "ADMIN2026") {
+      setError("Invalid registration passcode for Administrator.");
       return;
     }
     if (form.role === "student" && !form.program) {
@@ -205,6 +221,21 @@ export default function SignUp({ goTo }: SignUpProps) {
                 ))}
               </select>
             </div>
+
+            {(form.role === "nas" || form.role === "it" || form.role === "admin") && (
+              <div className="field animate-fade-in">
+                <label htmlFor="su-passcode">Role Registration Passcode</label>
+                <input
+                  id="su-passcode"
+                  type="password"
+                  placeholder="Enter passcode to register for this role"
+                  value={passcode}
+                  onChange={(e) => setPasscode(e.target.value)}
+                  required
+                  disabled={loading}
+                />
+              </div>
+            )}
 
             {/* Students pick from a fixed list of CIT-U programs */}
             {form.role === "student" && (
