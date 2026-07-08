@@ -17,7 +17,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 // =========================================================
 // TYPES
 // =========================================================
-export type Role = "student" | "nas" | "it" | "cpe_faculty";
+export type Role = "student" | "nas" | "it" | "cpe_faculty" | "admin";
 export type TicketStatus = "open" | "in_progress" | "resolved";
 export type TicketPriority = "normal" | "high";
 export type HandlerRole = "nas" | "it";
@@ -61,14 +61,21 @@ export interface Ticket {
   assigned_to: string | null;
   created_at: string;
   resolved_at: string | null;
+  escalated_at: string | null;
+  escalated_by: string | null;
+  resolution_notes: string | null;
+  internal_notes: string | null;
+  closed_reason: string | null;
 }
 
 export interface TicketWithDetails extends Ticket {
   labs: { name: string } | null;
   stations: { station_number: string } | null;
+  user?: { fullname: string; email: string; student_or_staff_id: string | null; program: string | null } | null;
+  assigned_user?: { fullname: string; email: string } | null;
 }
 
-const TICKET_SELECT = "*, labs(name), stations(station_number)";
+const TICKET_SELECT = "*, labs(name), stations(station_number), user:users!tickets_user_id_fkey(fullname, email, student_or_staff_id, program), assigned_user:users!tickets_assigned_to_fkey(fullname, email)";
 
 // =========================================================
 // AUTH
@@ -279,4 +286,246 @@ export async function getStations(labId: string): Promise<Station[]> {
 
   if (error) throw error;
   return data as Station[];
+}
+
+// =========================================================
+// IT OPERATIONS / MANAGEMENT
+// =========================================================
+
+export async function claimTicketAsIt(ticketId: string) {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not signed in.");
+
+  const { data, error } = await supabase
+    .from("tickets")
+    .update({ assigned_to: user.id, status: "in_progress", current_handler: "it" })
+    .eq("id", ticketId)
+    .select(TICKET_SELECT)
+    .single();
+
+  if (error) throw error;
+  await addTicketHistory(ticketId, "claimed", "Claimed by IT staff");
+  return data as unknown as TicketWithDetails;
+}
+
+export async function revokeAndReassignTicket(ticketId: string, assignedToId: string | null) {
+  const updateData: any = { assigned_to: assignedToId };
+  if (assignedToId === null) {
+    updateData.status = "open";
+  } else {
+    updateData.status = "in_progress";
+  }
+
+  const { data, error } = await supabase
+    .from("tickets")
+    .update(updateData)
+    .eq("id", ticketId)
+    .select(TICKET_SELECT)
+    .single();
+
+  if (error) throw error;
+  await addTicketHistory(ticketId, "reassigned", `Reassigned to ${assignedToId || "unassigned"}`);
+  return data as unknown as TicketWithDetails;
+}
+
+export async function resolveTicketWithNotes(ticketId: string, resolutionNotes: string, internalNotes?: string) {
+  const { data, error } = await supabase
+    .from("tickets")
+    .update({ 
+      status: "resolved", 
+      resolution_notes: resolutionNotes, 
+      internal_notes: internalNotes || null 
+    })
+    .eq("id", ticketId)
+    .select(TICKET_SELECT)
+    .single();
+
+  if (error) throw error;
+  await addTicketHistory(ticketId, "resolved", `Resolved: ${resolutionNotes}`);
+  return data as unknown as TicketWithDetails;
+}
+
+export async function closeTicket(ticketId: string, reason: string) {
+  const { data, error } = await supabase
+    .from("tickets")
+    .update({ 
+      status: "resolved", 
+      closed_reason: reason, 
+      resolution_notes: `Closed/Rejected: ${reason}` 
+    })
+    .eq("id", ticketId)
+    .select(TICKET_SELECT)
+    .single();
+
+  if (error) throw error;
+  await addTicketHistory(ticketId, "closed", `Closed: ${reason}`);
+  return data as unknown as TicketWithDetails;
+}
+
+export async function escalateTicket(ticketId: string, internalNotes?: string) {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const { data, error } = await supabase
+    .from("tickets")
+    .update({ 
+      current_handler: "it", 
+      status: "open", 
+      assigned_to: null, 
+      escalated_at: new Date().toISOString(),
+      escalated_by: user?.id || null,
+      internal_notes: internalNotes || null
+    })
+    .eq("id", ticketId)
+    .select(TICKET_SELECT)
+    .single();
+
+  if (error) throw error;
+  await addTicketHistory(ticketId, "escalated", `Escalated to IT: ${internalNotes || "No notes"}`);
+  return data as unknown as TicketWithDetails;
+}
+
+export async function deescalateTicket(ticketId: string) {
+  const { data, error } = await supabase
+    .from("tickets")
+    .update({ 
+      current_handler: "nas", 
+      status: "open", 
+      assigned_to: null 
+    })
+    .eq("id", ticketId)
+    .select(TICKET_SELECT)
+    .single();
+
+  if (error) throw error;
+  await addTicketHistory(ticketId, "deescalated", "Sent back to NAS queue");
+  return data as unknown as TicketWithDetails;
+}
+
+export async function addTicketHistory(ticketId: string, action: string, details?: string) {
+  try {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return;
+
+    await supabase.from("ticket_history").insert({
+      ticket_id: ticketId,
+      action,
+      performed_by: user.id,
+      details: details || null,
+    });
+  } catch (err) {
+    console.error("Error writing ticket history:", err);
+  }
+}
+
+export async function getAllTickets(): Promise<TicketWithDetails[]> {
+  const { data, error } = await supabase
+    .from("tickets")
+    .select(TICKET_SELECT)
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+  return data as unknown as TicketWithDetails[];
+}
+
+export async function getNasUsers(): Promise<Profile[]> {
+  const { data, error } = await supabase
+    .from("users")
+    .select("*")
+    .eq("role", "nas")
+    .order("fullname");
+
+  if (error) throw error;
+  return data as Profile[];
+}
+
+export async function getTicketHistory(ticketId: string) {
+  const { data, error } = await supabase
+    .from("ticket_history")
+    .select("*, users:users(fullname)")
+    .eq("ticket_id", ticketId)
+    .order("created_at", { ascending: true });
+
+  if (error) throw error;
+  return data;
+}
+
+// Lab / Station CRUD
+export async function addLab(name: string): Promise<Lab> {
+  const { data, error } = await supabase.from("labs").insert({ name }).select().single();
+  if (error) throw error;
+  return data as Lab;
+}
+
+export async function deleteLab(id: number): Promise<void> {
+  const { error } = await supabase.from("labs").delete().eq("id", id);
+  if (error) throw error;
+}
+
+export async function addStation(labId: number, stationNumber: string): Promise<Station> {
+  const { data, error } = await supabase
+    .from("stations")
+    .insert({ lab_id: labId, station_number: stationNumber })
+    .select()
+    .single();
+  if (error) throw error;
+  return data as Station;
+}
+
+export async function deleteStation(id: number): Promise<void> {
+  const { error } = await supabase.from("stations").delete().eq("id", id);
+  if (error) throw error;
+}
+
+export async function bulkAddStations(labId: number, stationNumbers: string[]): Promise<Station[]> {
+  const rows = stationNumbers.map((num) => ({ lab_id: labId, station_number: num }));
+  const { data, error } = await supabase.from("stations").insert(rows).select();
+  if (error) throw error;
+  return data as Station[];
+}
+
+// =========================================================
+// ADMIN OPERATIONS
+// =========================================================
+
+export async function getAllUsers(): Promise<Profile[]> {
+  const { data, error } = await supabase
+    .from("users")
+    .select("*")
+    .order("fullname");
+
+  if (error) throw error;
+  return data as Profile[];
+}
+
+export async function updateUserRole(userId: string, newRole: Role): Promise<Profile> {
+  const { data, error } = await supabase
+    .from("users")
+    .update({ role: newRole })
+    .eq("id", userId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data as Profile;
+}
+
+export async function deleteUser(userId: string): Promise<void> {
+  const { error } = await supabase.from("users").delete().eq("id", userId);
+  if (error) throw error;
+}
+
+export async function getAllTicketHistory(): Promise<any[]> {
+  const { data, error } = await supabase
+    .from("ticket_history")
+    .select("*, users:users(fullname)")
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+  return data;
 }

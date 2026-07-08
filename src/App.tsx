@@ -4,6 +4,8 @@ import SignIn from "./signin";
 import SignUp from "./signup";
 import StudentPortal from "./studentportal";
 import NasPortal from "./NasPortal";
+import ITPortal from "./ITPortal";
+import AdminPortal from "./AdminPortal";
 import { supabase, getCurrentProfile } from "./lib.ts";
 import type { Role } from "./lib.ts";
 import "./App.css";
@@ -64,22 +66,8 @@ function App() {
       return <SignUp goTo={goTo} />;
     case "portal":
       if (role === "nas") return <NasPortal />;
-      if (role === "it") {
-        // IT portal isn't built yet — swap this for <ItPortal /> once it is.
-        return (
-          <div className="portal-loading">
-            IT portal isn't wired up yet.{" "}
-            <button
-              className="btn btn-ghost"
-              onClick={async () => {
-                await supabase.auth.signOut();
-              }}
-            >
-              Sign out
-            </button>
-          </div>
-        );
-      }
+      if (role === "it") return <ITPortal />;
+      if (role === "admin") return <AdminPortal />;
       // student and cpe_faculty both use the student portal — both roles
       // just report and track their own tickets, no queue to manage.
       return <StudentPortal />;

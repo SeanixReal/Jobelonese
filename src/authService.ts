@@ -1,10 +1,10 @@
-import supabase from './CreateClient';
+import { supabase } from './lib';
 
 export interface UserData {
   id?: string;
   email: string;
   fullname?: string; // ✅ Aligned to lowercase match physical table column
-  role?: 'student' | 'nas' | 'it' | 'cpe_faculty'; // ✅ Aligned to match underscore used in DB
+  role?: 'student' | 'nas' | 'it' | 'cpe_faculty' | 'admin'; // ✅ Aligned to match underscore used in DB
   student_or_staff_id?: string | null;
   program?: string | null;
   created_at?: string; // ✅ Aligned to snake_case table column
