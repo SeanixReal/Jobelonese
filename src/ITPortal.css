@@ -47,7 +47,8 @@
   color: var(--text-muted);
 }
 
-/* Color Accent Variations — number color only, no border stripe */
+/* Color Accent Variations — number color only, no border stripe,
+   matching the .stat-value.accent/.teal/.blue pattern in StudentPortal.css */
 .stat-red .stat-num { color: var(--danger); }
 .stat-orange .stat-num { color: var(--accent); }
 .stat-blue .stat-num { color: var(--blue); }
@@ -432,6 +433,9 @@
 .pane-card.placeholder-pane svg {
   margin-bottom: 12px;
   opacity: 0.5;
+  /* This icon has no width/height attributes and relied on Tailwind's
+     w-12/h-12 utility classes, which don't exist in this stylesheet —
+     without this rule it renders at the SVG spec's ~300x150px default. */
   width: 48px;
   height: 48px;
 }
@@ -1375,66 +1379,26 @@
   }
 }
 
-/* -------------------------------------------------- */
-/* MODERNIZED SIDEBAR LINK SYSTEM (REMOVED GREY BOX)  */
-/* -------------------------------------------------- */
+/* ------------------------------------------ */
+/* SIDEBAR NAV GROUP + IT-SPECIFIC LOGO MARK */
+/* ------------------------------------------ */
 .nav-group {
   display: flex;
   flex-direction: column;
   flex: 1;
 }
 
-/* Base style targeted at links inside your sidebar layout */
-.nav-group a,
-.sidebar-link,
-.nav-link {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 16px;
-  color: var(--text-muted);
-  font-size: 14.5px;
-  font-weight: 500;
-  text-decoration: none;
-  background: transparent;       /* Explicitly removes the chunky box */
-  border: 1px solid transparent; /* Clears predefined grid element containers */
-  border-radius: 8px;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  margin-bottom: 4px;
-}
-
-/* Elegant Hover Sheen */
-.nav-group a:hover,
-.sidebar-link:hover,
-.nav-link:hover {
-  color: var(--text);
-  background: rgba(255, 255, 255, 0.03); 
-}
-
-/* Premium Active Indicator State (e.g. NAS Workforce look) */
-.nav-group a.active,
-.sidebar-link.active,
-.nav-link.active,
-.nav-group a[data-active="true"] {
-  color: var(--text);
-  font-weight: 600;
-  background: rgba(255, 107, 53, 0.06); /* Soft, adaptive tint of core accent */
-  border-left: 3px solid var(--accent); /* Elegant alignment bar */
-  border-radius: 0 8px 8px 0;          /* Straight left edge, soft rounded right */
-  padding-left: 13px;                  /* Offsets border width to match typography geometry */
-}
-
-/* Synchronized SVG Icon Opacities */
-.nav-group a svg,
-.sidebar-link svg,
-.nav-link svg {
-  opacity: 0.65;
-  transition: opacity 0.2s ease;
-}
-
-.nav-group a:hover svg,
-.nav-group a.active svg {
-  opacity: 1;
+/* The sidebar nav items here are real <button> elements (unlike the
+   student portal's <a> tags), so without this reset the browser's
+   default button chrome (grey background + border) shows through on
+   top of .nav-item's own styling — that's the grey box in the screenshot. */
+.sidebar button.nav-item {
+  background: none;
+  border: none;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
 }
 
 .profile-info-block {
@@ -1444,7 +1408,9 @@
 }
 
 /* ------------------------------------------ */
-/* GENERIC FORM INPUTS */
+/* GENERIC FORM INPUTS (input-field / input-select) */
+/* These are the base inputs used everywhere in this portal — Report a
+   Ticket, filters, lab manager, resolve/reassign/close forms. */
 /* ------------------------------------------ */
 .input-field,
 .input-select {
@@ -1489,6 +1455,10 @@
 
 /* ------------------------------------------ */
 /* TEXT/LAYOUT UTILITY CLASSES */
+/* Referenced throughout the component (text-muted, font-mono, uppercase,
+   text-green/red/accent/highlight, font-bold, text-center, btn-xs) but
+   never previously defined — without these, most of the fine-grained
+   text styling in the Tickets/NAS/Profile views was invisible. */
 /* ------------------------------------------ */
 .text-center { text-align: center; }
 .text-muted { color: var(--text-muted); }
