@@ -244,6 +244,17 @@
   align-items: start;
 }
 
+.all-labs-column {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.editor-section {
+  position: sticky;
+  top: 24px;
+}
+
 @media (max-width: 960px) {
   .lab-map-layout {
     grid-template-columns: 1fr;
@@ -258,19 +269,25 @@
   min-height: 400px;
 }
 
-.section-title-row {
+.grid-header-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
   margin-bottom: 20px;
-  border-bottom: 1px solid var(--panel-line);
-  padding-bottom: 12px;
 }
 
-.section-title-row h3 {
+.grid-header-title {
   margin: 0;
-  font-family: var(--font-display);
-  font-size: 16.5px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text-muted);
+  letter-spacing: 0.3px;
+}
+
+.grid-header-title b {
+  color: var(--text);
   font-weight: 600;
 }
 
@@ -291,24 +308,21 @@
 
 .station-tile {
   aspect-ratio: 1;
-  border-radius: 8px;
+  border-radius: 10px;
   border: 1px solid var(--panel-line);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  font-family: var(--font-mono);
-  font-weight: 700;
-  font-size: 16px;
+  gap: 6px;
   position: relative;
-  transition: transform 0.1s ease, box-shadow 0.1s ease;
+  transition: transform 0.1s ease, background 0.15s ease;
   background: transparent;
   cursor: pointer;
 }
 
 .station-tile:hover {
-  transform: scale(1.05);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  transform: scale(1.04);
 }
 
 .station-tile.selected {
@@ -316,43 +330,48 @@
   outline-offset: 2px;
 }
 
-.station-tile .station-number {
-  color: var(--text);
+.tile-icon {
+  width: 22px;
+  height: 22px;
 }
 
-/* Status Tile Colors */
+.tile-label {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+
+/* Status tints the whole tile — border, background, icon, and label all
+   pick up the same accent color, matching the reference screenshot. */
 .tile-green {
   background: rgba(79, 209, 197, 0.08);
-  border-color: rgba(79, 209, 197, 0.3);
+  border-color: rgba(79, 209, 197, 0.35);
 }
-.tile-green:hover {
-  background: rgba(79, 209, 197, 0.15);
-}
-.tile-green .station-number {
-  color: var(--teal);
-}
+.tile-green:hover { background: rgba(79, 209, 197, 0.14); }
+.tile-green .tile-icon,
+.tile-green .tile-label { color: var(--teal); }
 
 .tile-yellow {
-  background: rgba(91, 141, 239, 0.08);
-  border-color: rgba(91, 141, 239, 0.3);
+  background: rgba(91, 141, 239, 0.1);
+  border-color: rgba(91, 141, 239, 0.4);
 }
-.tile-yellow:hover {
-  background: rgba(91, 141, 239, 0.15);
-}
-.tile-yellow .station-number {
-  color: var(--blue);
-}
+.tile-yellow:hover { background: rgba(91, 141, 239, 0.16); }
+.tile-yellow .tile-icon,
+.tile-yellow .tile-label { color: var(--blue); }
 
 .tile-red {
-  background: rgba(240, 153, 123, 0.08);
-  border-color: rgba(240, 153, 123, 0.3);
+  background: rgba(240, 153, 123, 0.1);
+  border-color: rgba(240, 153, 123, 0.4);
 }
-.tile-red:hover {
-  background: rgba(240, 153, 123, 0.15);
-}
-.tile-red .station-number {
-  color: var(--danger);
-}
+.tile-red:hover { background: rgba(240, 153, 123, 0.16); }
+.tile-red .tile-icon,
+.tile-red .tile-label { color: var(--danger); }
+
+.dot-green { background: var(--teal); }
+.dot-yellow { background: var(--blue); }
+.dot-red { background: var(--danger); }
+
 
 .active-ticket-count-pill {
   position: absolute;
