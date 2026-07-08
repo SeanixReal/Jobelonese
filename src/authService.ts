@@ -1,4 +1,4 @@
-import supabase from './CreateClient';
+import { supabase } from './lib';
 
 export interface UserData {
   id?: string;
