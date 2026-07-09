@@ -18,6 +18,16 @@ const ROLE_LABELS: Record<Role, string> = {
 };
 
 const ROLE_OPTIONS = Object.keys(ROLE_LABELS) as Role[];
+const PRIVILEGED_ROLE_PASSCODES = {
+  nas: import.meta.env.VITE_NAS_ROLE_PASSCODE,
+  it: import.meta.env.VITE_IT_ROLE_PASSCODE,
+  admin: import.meta.env.VITE_ADMIN_ROLE_PASSCODE,
+} as const;
+const PRIVILEGED_ROLE_ERROR_LABELS = {
+  nas: "NAS Scholar",
+  it: "IT Administrator",
+  admin: "System Administrator",
+} as const;
 
 // Standard academic programs at CIT-U
 const PROGRAM_OPTIONS = ["BSIT", "BSCS", "BSCpE", "BSEMC", "BSIS", "BSISc", "BSECE", "BSEE", "BSME", "BSCE", "BSApE"];
@@ -85,17 +95,16 @@ export default function SignUp({ goTo }: SignUpProps) {
     }
 
     // Validate registration passcodes for privileged roles
-    if (form.role === "nas" && passcode !== "Seanix") {
-      setError("Invalid registration passcode for NAS Scholar.");
-      return;
-    }
-    if (form.role === "it" && passcode !== "Seanix") {
-      setError("Invalid registration passcode for IT Administrator.");
-      return;
-    }
-    if (form.role === "admin" && passcode !== "Seanix") {
-      setError("Invalid registration passcode for System Administrator.");
-      return;
+    if (form.role === "nas" || form.role === "it" || form.role === "admin") {
+      const requiredPasscode = PRIVILEGED_ROLE_PASSCODES[form.role];
+      if (!requiredPasscode) {
+        setError("Registration passcode for this role is not configured. Please contact an administrator.");
+        return;
+      }
+      if (passcode !== requiredPasscode) {
+        setError(`Invalid registration passcode for ${PRIVILEGED_ROLE_ERROR_LABELS[form.role]}.`);
+        return;
+      }
     }
     if (form.role === "student" && !form.program) {
       setError("Please select your academic program.");

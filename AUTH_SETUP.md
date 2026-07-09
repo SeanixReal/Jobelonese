@@ -58,6 +58,9 @@ The `.env.local` file should contain:
 ```
 VITE_SUPABASE_URL=https://hdqysptfslyqihusgprb.supabase.co
 VITE_SUPABASE_ANON_KEY=sb_publishable_SIy8mURo4FoBC2TdqN4nxw__tdKM_1H
+VITE_NAS_ROLE_PASSCODE=your-nas-passcode
+VITE_IT_ROLE_PASSCODE=your-it-passcode
+VITE_ADMIN_ROLE_PASSCODE=your-admin-passcode
 ```
 
 ### Step 3: Test the Authentication
@@ -162,4 +165,3 @@ try {
 5. 📝 Add email verification
 6. 📝 Add user profile management page
 7. 📝 Add logout functionality to main app
-
