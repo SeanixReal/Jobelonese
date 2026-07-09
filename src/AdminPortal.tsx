@@ -14,6 +14,9 @@ import "./ITPortal.css"; // Reuse card layouts, spacing, table designs
 import "./AdminPortal.css";
 
 type AdminPortalView = "dashboard" | "users" | "logs" | "settings" | "profile";
+const NAS_ROLE_PASSCODE_DISPLAY = import.meta.env.VITE_NAS_ROLE_PASSCODE || "Not configured";
+const IT_ROLE_PASSCODE_DISPLAY = import.meta.env.VITE_IT_ROLE_PASSCODE || "Not configured";
+const ADMIN_ROLE_PASSCODE_DISPLAY = import.meta.env.VITE_ADMIN_ROLE_PASSCODE || "Not configured";
 
 export default function AdminPortal() {
   const [currentView, setCurrentView] = useState<AdminPortalView>("dashboard");
@@ -643,8 +646,7 @@ export default function AdminPortal() {
                             >
                               <option value="student">Student</option>
                               <option value="nas">NAS (Scholar)</option>
-                              <option value="it">IT Specialist</option>
-                              <option value="cpe_faculty">CPE Faculty</option>
+                              <option value="it">IT Administrator</option>                           
                               <option value="admin">System Admin</option>
                             </select>
                           </div>
@@ -754,17 +756,17 @@ export default function AdminPortal() {
               <div className="passcodes-info-grid">
                 <div className="passcode-card card-glass text-center">
                   <h5>NAS Scholar Role</h5>
-                  <div className="passcode-display font-mono">NAS2026</div>
+                  <div className="passcode-display font-mono">{NAS_ROLE_PASSCODE_DISPLAY}</div>
                 </div>
 
                 <div className="passcode-card card-glass text-center">
                   <h5>IT Specialist Role</h5>
-                  <div className="passcode-display font-mono">IT2026</div>
+                  <div className="passcode-display font-mono">{IT_ROLE_PASSCODE_DISPLAY}</div>
                 </div>
 
                 <div className="passcode-card card-glass text-center">
                   <h5>System Admin Role</h5>
-                  <div className="passcode-display font-mono">ADMIN2026</div>
+                  <div className="passcode-display font-mono">{ADMIN_ROLE_PASSCODE_DISPLAY}</div>
                 </div>
               </div>
 

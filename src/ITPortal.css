@@ -1,11 +1,10 @@
 /* ---------- GLASSMORPHIC & GRID STYLES FOR IT PORTAL ---------- */
 
 .card-glass {
-  background: var(--bg-soft);
+  background: var(--panel);
   border: 1px solid var(--panel-line);
-  border-radius: var(--radius);
+  border-radius: 14px;
   padding: 24px;
-  box-shadow: var(--shadow);
 }
 
 /* Stats Layout */
@@ -19,17 +18,10 @@
 .stat-card {
   background: var(--panel);
   border: 1px solid var(--panel-line);
-  border-radius: var(--radius);
+  border-radius: 12px;
   padding: 20px;
   display: flex;
   flex-direction: column;
-  box-shadow: var(--shadow);
-  transition: transform 0.2s ease, border-color 0.2s ease;
-}
-
-.stat-card:hover {
-  transform: translateY(-2px);
-  border-color: rgba(255, 255, 255, 0.15);
 }
 
 .stat-card .stat-label {
@@ -43,9 +35,9 @@
 
 .stat-card .stat-num {
   font-family: var(--font-display);
-  font-size: 42px;
+  font-size: 26px;
   font-weight: 700;
-  line-height: 1;
+  line-height: 1.1;
   margin-bottom: 6px;
   color: var(--text);
 }
@@ -55,17 +47,11 @@
   color: var(--text-muted);
 }
 
-/* Color Accent Variations */
-.stat-red { border-left: 4px solid var(--danger); }
+/* Color Accent Variations — number color only, no border stripe,
+   matching the .stat-value.accent/.teal/.blue pattern in StudentPortal.css */
 .stat-red .stat-num { color: var(--danger); }
-
-.stat-orange { border-left: 4px solid var(--accent); }
 .stat-orange .stat-num { color: var(--accent); }
-
-.stat-blue { border-left: 4px solid var(--blue); }
 .stat-blue .stat-num { color: var(--blue); }
-
-.stat-green { border-left: 4px solid var(--teal); }
 .stat-green .stat-num { color: var(--teal); }
 
 /* Dashboard Columns */
@@ -86,10 +72,8 @@
   margin-top: 0;
   margin-bottom: 18px;
   font-family: var(--font-display);
-  font-size: 18px;
+  font-size: 16.5px;
   font-weight: 600;
-  border-bottom: 1px solid var(--panel-line);
-  padding-bottom: 12px;
 }
 
 /* Lab Health List */
@@ -100,12 +84,19 @@
   gap: 12px;
 }
 
+.empty-health {
+  color: var(--text-muted);
+  font-size: 13.5px;
+  padding: 12px 0;
+  text-align: center;
+}
+
 .lab-health-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 12px 16px;
-  background: var(--panel);
+  background: var(--bg-soft);
   border: 1px solid var(--panel-line);
   border-radius: 8px;
   transition: background 0.15s;
@@ -130,13 +121,12 @@
   margin-top: 2px;
 }
 
-.health-good { border-left: 3px solid var(--teal); }
+/* Status is communicated via the text color only — no colored left
+   border strip on the row itself. */
 .health-good .lab-status-text { color: var(--teal); }
 
-.health-warning { border-left: 3px solid var(--accent); }
 .health-warning .lab-status-text { color: var(--accent); }
 
-.health-critical { border-left: 3px solid var(--danger); }
 .health-critical .lab-status-text { color: var(--danger); }
 
 /* Category Metric Bars */
@@ -164,7 +154,7 @@
 .bar-track {
   width: 100%;
   height: 6px;
-  background: var(--panel);
+  background: var(--bg-soft);
   border-radius: 3px;
   overflow: hidden;
 }
@@ -187,7 +177,7 @@
 .dashboard-table-section h4 {
   margin: 0;
   font-family: var(--font-display);
-  font-size: 18px;
+  font-size: 16.5px;
   font-weight: 600;
 }
 
@@ -253,6 +243,17 @@
   align-items: start;
 }
 
+.all-labs-column {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.editor-section {
+  position: sticky;
+  top: 24px;
+}
+
 @media (max-width: 960px) {
   .lab-map-layout {
     grid-template-columns: 1fr;
@@ -267,19 +268,25 @@
   min-height: 400px;
 }
 
-.section-title-row {
+.grid-header-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
   margin-bottom: 20px;
-  border-bottom: 1px solid var(--panel-line);
-  padding-bottom: 12px;
 }
 
-.section-title-row h3 {
+.grid-header-title {
   margin: 0;
-  font-family: var(--font-display);
-  font-size: 18px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text-muted);
+  letter-spacing: 0.3px;
+}
+
+.grid-header-title b {
+  color: var(--text);
   font-weight: 600;
 }
 
@@ -300,24 +307,21 @@
 
 .station-tile {
   aspect-ratio: 1;
-  border-radius: 8px;
+  border-radius: 10px;
   border: 1px solid var(--panel-line);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  font-family: var(--font-mono);
-  font-weight: 700;
-  font-size: 16px;
+  gap: 6px;
   position: relative;
-  transition: transform 0.1s ease, box-shadow 0.1s ease;
+  transition: transform 0.1s ease, background 0.15s ease;
   background: transparent;
   cursor: pointer;
 }
 
 .station-tile:hover {
-  transform: scale(1.05);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  transform: scale(1.04);
 }
 
 .station-tile.selected {
@@ -325,43 +329,48 @@
   outline-offset: 2px;
 }
 
-.station-tile .station-number {
-  color: var(--text);
+.tile-icon {
+  width: 22px;
+  height: 22px;
 }
 
-/* Status Tile Colors */
+.tile-label {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+
+/* Status tints the whole tile — border, background, icon, and label all
+   pick up the same accent color, matching the reference screenshot. */
 .tile-green {
   background: rgba(79, 209, 197, 0.08);
-  border-color: rgba(79, 209, 197, 0.3);
+  border-color: rgba(79, 209, 197, 0.35);
 }
-.tile-green:hover {
-  background: rgba(79, 209, 197, 0.15);
-}
-.tile-green .station-number {
-  color: var(--teal);
-}
+.tile-green:hover { background: rgba(79, 209, 197, 0.14); }
+.tile-green .tile-icon,
+.tile-green .tile-label { color: var(--teal); }
 
 .tile-yellow {
-  background: rgba(91, 141, 239, 0.08);
-  border-color: rgba(91, 141, 239, 0.3);
+  background: rgba(91, 141, 239, 0.1);
+  border-color: rgba(91, 141, 239, 0.4);
 }
-.tile-yellow:hover {
-  background: rgba(91, 141, 239, 0.15);
-}
-.tile-yellow .station-number {
-  color: var(--blue);
-}
+.tile-yellow:hover { background: rgba(91, 141, 239, 0.16); }
+.tile-yellow .tile-icon,
+.tile-yellow .tile-label { color: var(--blue); }
 
 .tile-red {
-  background: rgba(240, 153, 123, 0.08);
-  border-color: rgba(240, 153, 123, 0.3);
+  background: rgba(240, 153, 123, 0.1);
+  border-color: rgba(240, 153, 123, 0.4);
 }
-.tile-red:hover {
-  background: rgba(240, 153, 123, 0.15);
-}
-.tile-red .station-number {
-  color: var(--danger);
-}
+.tile-red:hover { background: rgba(240, 153, 123, 0.16); }
+.tile-red .tile-icon,
+.tile-red .tile-label { color: var(--danger); }
+
+.dot-green { background: var(--teal); }
+.dot-yellow { background: var(--blue); }
+.dot-red { background: var(--danger); }
+
 
 .active-ticket-count-pill {
   position: absolute;
@@ -429,6 +438,7 @@
 
 .pane-card.placeholder-pane {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   text-align: center;
@@ -441,6 +451,11 @@
 .pane-card.placeholder-pane svg {
   margin-bottom: 12px;
   opacity: 0.5;
+  /* This icon has no width/height attributes and relied on Tailwind's
+     w-12/h-12 utility classes, which don't exist in this stylesheet —
+     without this rule it renders at the SVG spec's ~300x150px default. */
+  width: 48px;
+  height: 48px;
 }
 
 .selected-station-pane .pane-header {
@@ -454,7 +469,7 @@
 
 .selected-station-pane h4 {
   margin: 0;
-  font-size: 18px;
+  font-size: 16.5px;
 }
 
 .btn-delete-station {
@@ -490,7 +505,7 @@
 }
 
 .ticket-pane-item {
-  background: var(--panel);
+  background: var(--bg-soft);
   border: 1px solid var(--panel-line);
   border-radius: 6px;
   padding: 12px;
@@ -600,7 +615,7 @@
 
 .search-bar-row .search-input {
   width: 100%;
-  background: var(--panel);
+  background: var(--bg-soft);
 }
 
 .filters-grid {
@@ -634,7 +649,26 @@
   font-size: 14.5px;
 }
 
+.loading-state {
+  text-align: center;
+  padding: 48px 24px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.mini-loading {
+  text-align: center;
+  padding: 16px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  font-family: var(--font-mono);
+}
+
 /* Data Table Customizations */
+.table-responsive {
+  overflow-x: auto;
+}
+
 .data-table {
   width: 100%;
   border-collapse: collapse;
@@ -651,6 +685,7 @@
   border-bottom: 1px solid var(--panel-line);
   font-weight: 500;
   letter-spacing: 0.5px;
+  white-space: nowrap;
 }
 
 .data-table td {
@@ -678,56 +713,66 @@
   text-overflow: ellipsis;
 }
 
+.text-truncate {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
+
 .handler-cell {
   font-weight: 500;
 }
 
 .priority-pill {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 9.5px;
   font-weight: 600;
+  letter-spacing: 0.4px;
   text-transform: uppercase;
-  padding: 2px 6px;
-  border-radius: 4px;
+  padding: 3px 9px;
+  border-radius: 20px;
+  display: inline-block;
 }
 
 .priority-high {
-  background: rgba(240, 153, 123, 0.15);
+  background: rgba(240, 153, 123, 0.18);
   color: var(--danger);
 }
 
 .priority-normal {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.08);
   color: var(--text-muted);
 }
 
 /* Status Badges */
 .status-badge-custom {
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 10px;
   font-weight: 600;
-  padding: 3px 8px;
+  letter-spacing: 0.6px;
+  padding: 3px 9px;
   border-radius: 20px;
   display: inline-block;
 }
 
 .badge-status-open {
-  background: rgba(255, 107, 53, 0.1);
+  background: rgba(255, 107, 53, 0.16);
   color: var(--accent);
 }
 
 .badge-status-progress {
-  background: rgba(91, 141, 239, 0.1);
-  color: var(--blue);
+  background: rgba(91, 141, 239, 0.18);
+  color: #8FAEF2;
 }
 
 .badge-status-escalated {
-  background: rgba(240, 153, 123, 0.15);
+  background: rgba(240, 153, 123, 0.18);
   color: var(--danger);
 }
 
 .badge-status-resolved {
-  background: rgba(79, 209, 197, 0.1);
+  background: rgba(79, 209, 197, 0.16);
   color: var(--teal);
 }
 
@@ -756,7 +801,7 @@
 .inspector-title-row h3 {
   margin: 0 0 6px;
   font-family: var(--font-display);
-  font-size: 18px;
+  font-size: 16.5px;
   font-weight: 600;
 }
 
@@ -781,7 +826,7 @@
 }
 
 .details-section-box {
-  background: var(--panel);
+  background: var(--bg-soft);
   border: 1px solid var(--panel-line);
   border-radius: 8px;
   padding: 14px;
@@ -933,6 +978,12 @@
   border: 1px solid var(--panel);
 }
 
+.node-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
 .node-header {
   display: flex;
   justify-content: space-between;
@@ -969,6 +1020,11 @@
   gap: 20px;
 }
 
+.col-span-3 {
+  grid-column: 1 / -1;
+  text-align: center;
+}
+
 .nas-member-card {
   display: flex;
   flex-direction: column;
@@ -985,17 +1041,18 @@
 }
 
 .avatar-lg {
-  width: 48px;
-  height: 48px;
+  width: 56px;
+  height: 56px;
   border-radius: 50%;
   background: var(--teal);
   color: var(--teal-ink);
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 18px;
+  font-size: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
 }
 
 .nas-member-card h4 {
@@ -1067,6 +1124,21 @@
   }
 }
 
+.form-card-box,
+.list-card-box,
+.form-card-standalone {
+  display: flex;
+  flex-direction: column;
+}
+
+.form-card-box h4,
+.list-card-box h4 {
+  margin: 0 0 18px;
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 600;
+}
+
 .standard-form {
   display: flex;
   flex-direction: column;
@@ -1089,6 +1161,12 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 16px;
+}
+
+@media (max-width: 560px) {
+  .form-group-row-2 {
+    grid-template-columns: 1fr;
+  }
 }
 
 .textarea-field {
@@ -1115,7 +1193,7 @@
   justify-content: space-between;
   align-items: center;
   padding: 12px 16px;
-  background: var(--panel);
+  background: var(--bg-soft);
   border: 1px solid var(--panel-line);
   border-radius: 8px;
   transition: border-color 0.15s;
@@ -1198,14 +1276,14 @@
 .profile-avatar-section h3 {
   margin: 0;
   font-family: var(--font-display);
-  font-size: 20px;
+  font-size: 17px;
   font-weight: 700;
 }
 
 .profile-details-section h4 {
   margin: 0 0 20px;
   font-family: var(--font-display);
-  font-size: 18px;
+  font-size: 16.5px;
   font-weight: 600;
 }
 
@@ -1216,7 +1294,7 @@
 }
 
 .profile-detail-card {
-  background: var(--panel);
+  background: var(--bg-soft);
   border: 1px solid var(--panel-line);
   border-radius: 8px;
   padding: 16px;
@@ -1294,6 +1372,15 @@
   border: 1px solid rgba(240, 153, 123, 0.2);
 }
 
+.fade-out-alert {
+  animation: fadeOutAlert 5s ease forwards;
+}
+
+@keyframes fadeOutAlert {
+  0%, 80% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
 /* Animations */
 .animate-fade-in {
   animation: fadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
@@ -1309,3 +1396,102 @@
     transform: translateY(0);
   }
 }
+
+/* ------------------------------------------ */
+/* SIDEBAR NAV GROUP + IT-SPECIFIC LOGO MARK */
+/* ------------------------------------------ */
+.nav-group {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+/* The sidebar nav items here are real <button> elements (unlike the
+   student portal's <a> tags), so without this reset the browser's
+   default button chrome (grey background + border) shows through on
+   top of .nav-item's own styling — that's the grey box in the screenshot. */
+.sidebar button.nav-item {
+  background: none;
+  border: none;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.profile-info-block {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* ------------------------------------------ */
+/* GENERIC FORM INPUTS (input-field / input-select) */
+/* These are the base inputs used everywhere in this portal — Report a
+   Ticket, filters, lab manager, resolve/reassign/close forms. */
+/* ------------------------------------------ */
+.input-field,
+.input-select {
+  width: 100%;
+  padding: 11px 13px;
+  border-radius: 8px;
+  border: 1px solid var(--panel-line);
+  background: var(--bg-soft);
+  color: var(--text);
+  font-size: 14px;
+  font-family: var(--font-body);
+  transition: border-color 0.15s;
+}
+
+.input-field::placeholder {
+  color: #697180;
+}
+
+.input-field:focus,
+.input-select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.input-select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%2398A1B0' stroke-width='1.5' fill='none' fill-rule='evenodd'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  padding-right: 36px;
+}
+
+.select-sm,
+.input-sm {
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
+.select-sm {
+  padding-right: 32px;
+}
+
+/* ------------------------------------------ */
+/* TEXT/LAYOUT UTILITY CLASSES */
+/* Referenced throughout the component (text-muted, font-mono, uppercase,
+   text-green/red/accent/highlight, font-bold, text-center, btn-xs) but
+   never previously defined — without these, most of the fine-grained
+   text styling in the Tickets/NAS/Profile views was invisible. */
+/* ------------------------------------------ */
+.text-center { text-align: center; }
+.text-muted { color: var(--text-muted); }
+.text-green { color: var(--teal); }
+.text-red { color: var(--danger); }
+.text-accent { color: var(--accent); }
+.text-highlight { color: var(--blue); font-weight: 600; }
+.font-mono { font-family: var(--font-mono); }
+.font-bold { font-weight: 700; }
+.uppercase { text-transform: uppercase; }
+
+.btn-xs {
+  padding: 5px 10px;
+  font-size: 11.5px;
+  border-radius: 5px;
+}
+
+.py-4 { padding-top: 16px; padding-bottom: 16px; }

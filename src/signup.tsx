@@ -8,20 +8,29 @@ interface SignUpProps {
   goTo: (view: View) => void;
 }
 
-export type Role = "student" | "nas" | "it" | "cpe-faculty" | "admin";
+export type Role = "student" | "nas" | "it" | "admin";
 
 const ROLE_LABELS: Record<Role, string> = {
   student: "Student",
   nas: "NAS (Non-Academic Scholar)",
-  it: "IT department",
-  "cpe-faculty": "Cpe faculty",
-  admin: "Administrator",
+  it: "IT Administrator",
+  admin: "System Administrator",
 };
 
 const ROLE_OPTIONS = Object.keys(ROLE_LABELS) as Role[];
+const PRIVILEGED_ROLE_PASSCODES = {
+  nas: import.meta.env.VITE_NAS_ROLE_PASSCODE,
+  it: import.meta.env.VITE_IT_ROLE_PASSCODE,
+  admin: import.meta.env.VITE_ADMIN_ROLE_PASSCODE,
+} as const;
+const PRIVILEGED_ROLE_ERROR_LABELS = {
+  nas: "NAS Scholar",
+  it: "IT Administrator",
+  admin: "System Administrator",
+} as const;
 
 // Standard academic programs at CIT-U
-const PROGRAM_OPTIONS = ["BSIT", "BSCS", "BSCpE", "BSEMC"];
+const PROGRAM_OPTIONS = ["BSIT", "BSCS", "BSCpE", "BSEMC", "BSIS", "BSISc", "BSECE", "BSEE", "BSME", "BSCE", "BSApE"];
 
 interface SignUpFormData {
   fullName: string;
@@ -86,17 +95,16 @@ export default function SignUp({ goTo }: SignUpProps) {
     }
 
     // Validate registration passcodes for privileged roles
-    if (form.role === "nas" && passcode !== "NAS2026") {
-      setError("Invalid registration passcode for NAS Scholar.");
-      return;
-    }
-    if (form.role === "it" && passcode !== "IT2026") {
-      setError("Invalid registration passcode for IT Department.");
-      return;
-    }
-    if (form.role === "admin" && passcode !== "ADMIN2026") {
-      setError("Invalid registration passcode for Administrator.");
-      return;
+    if (form.role === "nas" || form.role === "it" || form.role === "admin") {
+      const requiredPasscode = PRIVILEGED_ROLE_PASSCODES[form.role];
+      if (!requiredPasscode) {
+        setError("Registration passcode for this role is not configured. Please contact an administrator.");
+        return;
+      }
+      if (passcode !== requiredPasscode) {
+        setError(`Invalid registration passcode for ${PRIVILEGED_ROLE_ERROR_LABELS[form.role]}.`);
+        return;
+      }
     }
     if (form.role === "student" && !form.program) {
       setError("Please select your academic program.");
