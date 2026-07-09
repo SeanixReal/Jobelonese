@@ -643,8 +643,7 @@ export default function AdminPortal() {
                             >
                               <option value="student">Student</option>
                               <option value="nas">NAS (Scholar)</option>
-                              <option value="it">IT Specialist</option>
-                              <option value="cpe_faculty">CPE Faculty</option>
+                              <option value="it">IT Administrator</option>                           
                               <option value="admin">System Admin</option>
                             </select>
                           </div>
@@ -754,17 +753,17 @@ export default function AdminPortal() {
               <div className="passcodes-info-grid">
                 <div className="passcode-card card-glass text-center">
                   <h5>NAS Scholar Role</h5>
-                  <div className="passcode-display font-mono">NAS2026</div>
+                  <div className="passcode-display font-mono">Seanix</div>
                 </div>
 
                 <div className="passcode-card card-glass text-center">
                   <h5>IT Specialist Role</h5>
-                  <div className="passcode-display font-mono">IT2026</div>
+                  <div className="passcode-display font-mono">Seanix</div>
                 </div>
 
                 <div className="passcode-card card-glass text-center">
                   <h5>System Admin Role</h5>
-                  <div className="passcode-display font-mono">ADMIN2026</div>
+                  <div className="passcode-display font-mono">Seanix</div>
                 </div>
               </div>
 

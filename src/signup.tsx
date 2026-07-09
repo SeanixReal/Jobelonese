@@ -8,20 +8,19 @@ interface SignUpProps {
   goTo: (view: View) => void;
 }
 
-export type Role = "student" | "nas" | "it" | "cpe-faculty" | "admin";
+export type Role = "student" | "nas" | "it" | "admin";
 
 const ROLE_LABELS: Record<Role, string> = {
   student: "Student",
   nas: "NAS (Non-Academic Scholar)",
-  it: "IT department",
-  "cpe-faculty": "Cpe faculty",
-  admin: "Administrator",
+  it: "IT Administrator",
+  admin: "System Administrator",
 };
 
 const ROLE_OPTIONS = Object.keys(ROLE_LABELS) as Role[];
 
 // Standard academic programs at CIT-U
-const PROGRAM_OPTIONS = ["BSIT", "BSCS", "BSCpE", "BSEMC"];
+const PROGRAM_OPTIONS = ["BSIT", "BSCS", "BSCpE", "BSEMC", "BSIS", "BSISc", "BSECE", "BSEE", "BSME", "BSCE", "BSApE"];
 
 interface SignUpFormData {
   fullName: string;
@@ -86,16 +85,16 @@ export default function SignUp({ goTo }: SignUpProps) {
     }
 
     // Validate registration passcodes for privileged roles
-    if (form.role === "nas" && passcode !== "NAS2026") {
+    if (form.role === "nas" && passcode !== "Seanix") {
       setError("Invalid registration passcode for NAS Scholar.");
       return;
     }
-    if (form.role === "it" && passcode !== "IT2026") {
-      setError("Invalid registration passcode for IT Department.");
+    if (form.role === "it" && passcode !== "Seanix") {
+      setError("Invalid registration passcode for IT Administrator.");
       return;
     }
-    if (form.role === "admin" && passcode !== "ADMIN2026") {
-      setError("Invalid registration passcode for Administrator.");
+    if (form.role === "admin" && passcode !== "Seanix") {
+      setError("Invalid registration passcode for System Administrator.");
       return;
     }
     if (form.role === "student" && !form.program) {

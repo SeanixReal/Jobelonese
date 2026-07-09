@@ -30,8 +30,13 @@ interface SelectedStationInfo {
   labId: number;
 }
 
+const ALL_LABS = "all" as const;
+type LabFilterValue = number | typeof ALL_LABS;
+
 export default function LabMap({
   labs,
+  selectedLabId,
+  onSelectLabId,
   activeTickets,
   onViewTicket,
   onReportIssueAtStation,
@@ -42,6 +47,12 @@ export default function LabMap({
   const [actionError, setActionError] = useState("");
 
   const [selected, setSelected] = useState<SelectedStationInfo | null>(null);
+
+  // Which lab(s) are currently visible in the grid view. Defaults to
+  // whatever the parent has selected, or "all" if nothing is selected yet.
+  const [filterLabId, setFilterLabId] = useState<LabFilterValue>(
+    selectedLabId ?? ALL_LABS
+  );
 
   // Which lab the admin tools (add/bulk-add station) act on.
   const [adminLabId, setAdminLabId] = useState<number | null>(labs[0]?.id ?? null);
@@ -59,6 +70,14 @@ export default function LabMap({
       setAdminLabId(labs[0].id);
     }
   }, [labs, adminLabId]);
+
+  // When the parent navigates here targeting a specific lab (e.g. clicking
+  // "Inspect Map" on the dashboard), narrow the grid view to that room.
+  useEffect(() => {
+    if (selectedLabId !== null) {
+      setFilterLabId(selectedLabId);
+    }
+  }, [selectedLabId]);
 
   const loadAllStations = async () => {
     if (labs.length === 0) return;
@@ -182,6 +201,26 @@ export default function LabMap({
 
   const selectedLabName = selected ? labs.find((l) => l.id === selected.labId)?.name : undefined;
 
+  // Labs visible in the grid, based on the "All Labs" / specific room filter.
+  const visibleLabs =
+    filterLabId === ALL_LABS ? labs : labs.filter((l) => l.id === filterLabId);
+
+  const totalVisibleStations = visibleLabs.reduce(
+    (sum, lab) => sum + (stationsByLab[lab.id]?.length ?? 0),
+    0
+  );
+
+  const handleFilterChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const value = e.target.value;
+    if (value === ALL_LABS) {
+      setFilterLabId(ALL_LABS);
+    } else {
+      const id = Number(value);
+      setFilterLabId(id);
+      onSelectLabId(id);
+    }
+  };
+
   return (
     <div className="lab-map-container">
       {actionError && <div className="toast toast-error">{actionError}</div>}
@@ -198,212 +237,245 @@ export default function LabMap({
           <p>No laboratories are registered yet. Add one from Lab Manager to see it here.</p>
         </div>
       ) : (
-        <div className="lab-map-layout">
-          {/* All labs, stacked */}
-          <div className="all-labs-column">
-            {loading && Object.keys(stationsByLab).length === 0 ? (
-              <div className="map-loading">Loading lab layouts...</div>
-            ) : (
-              labs.map((lab) => {
-                const stations = stationsByLab[lab.id] ?? [];
-                return (
-                  <div className="grid-section" key={lab.id}>
-                    <div className="grid-header-row">
-                      <h3 className="grid-header-title">
-                        <b>{lab.name}</b> · floor status
-                      </h3>
-                      <div className="lab-legend">
-                        <span className="legend-item"><span className="dot dot-green"></span> ok</span>
-                        <span className="legend-item"><span className="dot dot-yellow"></span> in progress</span>
-                        <span className="legend-item"><span className="dot dot-red"></span> Urgent/Escalated</span>
-                      </div>
-                    </div>
+        <>
+          {/* Filter Header — All Labs vs Specific Room */}
+          <div className="lab-selector-header">
+            <div className="form-group-row">
+              <label htmlFor="lab-filter-select" className="form-label-inline">
+                Viewing
+              </label>
+              <select
+                id="lab-filter-select"
+                className="input-select select-lab-map"
+                value={filterLabId === ALL_LABS ? ALL_LABS : filterLabId}
+                onChange={handleFilterChange}
+              >
+                <option value={ALL_LABS}>All Labs ({labs.length} rooms)</option>
+                {labs.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name}
+                  </option>
+                ))}
+              </select>
+              <span className="badge-count">
+                {totalVisibleStations} station{totalVisibleStations === 1 ? "" : "s"}
+              </span>
+            </div>
 
-                    {stations.length === 0 ? (
-                      <div className="empty-map-state">
-                        <p>No stations registered for this lab yet.</p>
-                        <p className="text-muted">Use the station manager on the right to add some.</p>
-                      </div>
-                    ) : (
-                      <div className="stations-grid">
-                        {stations.map((station) => {
-                          const status = getStationStatus(station.id);
-                          const isSelected = selected?.station.id === station.id;
-                          return (
-                            <button
-                              key={station.id}
-                              type="button"
-                              className={`station-tile tile-${status.color} ${isSelected ? "selected" : ""}`}
-                              onClick={() => setSelected({ station, labId: lab.id })}
-                            >
-                              <MonitorIcon />
-                              <span className="tile-label">{station.station_number}</span>
-                              {status.tickets.length > 0 && (
-                                <div className="active-ticket-count-pill">{status.tickets.length}</div>
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                );
-              })
-            )}
-          </div>
-
-          {/* Sidebar Editor / Info Pane */}
-          <div className="editor-section">
-            {selected ? (
-              <div className="pane-card selected-station-pane animate-fade-in">
-                <div className="pane-header">
-                  <div>
-                    <h4>Station {selected.station.station_number}</h4>
-                    <span className="text-muted">Room: {selectedLabName}</span>
-                  </div>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm btn-delete-station"
-                    onClick={() => handleDeleteStation(selected.labId, selected.station.id)}
-                  >
-                    Delete Station
-                  </button>
-                </div>
-
-                <div className="pane-body">
-                  {(() => {
-                    const status = getStationStatus(selected.station.id);
-                    return (
-                      <>
-                        <div className="status-indicator">
-                          <span className={`dot dot-${status.color}`}></span>
-                          <strong>Status: {status.label}</strong>
-                        </div>
-
-                        {status.tickets.length > 0 ? (
-                          <div className="station-active-tickets">
-                            <h5>Active Tickets</h5>
-                            <div className="ticket-pane-list">
-                              {status.tickets.map((t) => (
-                                <div key={t.id} className="ticket-pane-item">
-                                  <div className="ticket-pane-header">
-                                    <span className="ticket-pane-id">{t.id}</span>
-                                    <span className={`status-pill ${t.status === "in_progress" ? "status-progress" : "status-open"}`}>
-                                      {t.status === "in_progress" ? "In progress" : "Open"}
-                                    </span>
-                                  </div>
-                                  <p className="ticket-pane-issue">{t.issue}</p>
-                                  <div className="ticket-pane-footer">
-                                    <span className="priority-tag">{t.priority}</span>
-                                    <button
-                                      type="button"
-                                      className="btn btn-primary btn-xs"
-                                      onClick={() => onViewTicket(t)}
-                                    >
-                                      Manage Ticket
-                                    </button>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="station-no-tickets-state">
-                            <p>No active issues reported for this station.</p>
-                            <button
-                              type="button"
-                              className="btn btn-ghost btn-sm btn-report-here"
-                              onClick={() =>
-                                onReportIssueAtStation(
-                                  selected.station.id,
-                                  selected.station.station_number
-                                )
-                              }
-                            >
-                              Report an Issue Here
-                            </button>
-                          </div>
-                        )}
-                      </>
-                    );
-                  })()}
-                </div>
-              </div>
-            ) : (
-              <div className="pane-card placeholder-pane">
-                <p>Click any station tile in any lab to inspect details, view active tickets, or delete it.</p>
-              </div>
-            )}
-
-            {/* Admin Station Creation Tools — acts on whichever lab is picked here */}
-            <div className="pane-card station-admin-tools">
-              <h4>Register Station</h4>
-              <div className="form-group" style={{ marginBottom: 12 }}>
-                <label htmlFor="admin-lab-select">Lab</label>
-                <select
-                  id="admin-lab-select"
-                  className="input-select"
-                  value={adminLabId ?? ""}
-                  onChange={(e) => setAdminLabId(Number(e.target.value))}
-                >
-                  {labs.map((l) => (
-                    <option key={l.id} value={l.id}>
-                      {l.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <form onSubmit={handleAddStation} className="form-station-add">
-                <div className="form-row-inline">
-                  <input
-                    type="text"
-                    className="input-field inline-input"
-                    placeholder="e.g. 05"
-                    value={newStationNumber}
-                    onChange={(e) => setNewStationNumber(e.target.value)}
-                    required
-                  />
-                  <button type="submit" className="btn btn-primary btn-sm">
-                    Add
-                  </button>
-                </div>
-              </form>
-
-              <hr className="divider-soft" />
-
-              <h4>Bulk Add Stations</h4>
-              <form onSubmit={handleBulkAdd} className="form-station-bulk">
-                <p className="form-help-text">Generate a range of stations (e.g. 1 to 24) for the lab selected above.</p>
-                <div className="form-row-inline">
-                  <input
-                    type="number"
-                    min="1"
-                    max="100"
-                    className="input-field inline-input"
-                    placeholder="Start"
-                    value={bulkStart}
-                    onChange={(e) => setBulkStart(e.target.value)}
-                    required
-                  />
-                  <span className="join-dash">to</span>
-                  <input
-                    type="number"
-                    min="1"
-                    max="100"
-                    className="input-field inline-input"
-                    placeholder="End"
-                    value={bulkEnd}
-                    onChange={(e) => setBulkEnd(e.target.value)}
-                    required
-                  />
-                  <button type="submit" className="btn btn-ghost btn-sm">
-                    Generate
-                  </button>
-                </div>
-              </form>
+            <div className="lab-legend">
+              <span className="legend-item"><span className="dot dot-green"></span> ok</span>
+              <span className="legend-item"><span className="dot dot-yellow"></span> in progress</span>
+              <span className="legend-item"><span className="dot dot-red"></span> Urgent/Escalated</span>
             </div>
           </div>
-        </div>
+
+          <div className="lab-map-layout">
+            {/* Visible labs, stacked */}
+            <div className="all-labs-column">
+              {loading && Object.keys(stationsByLab).length === 0 ? (
+                <div className="map-loading">Loading lab layouts...</div>
+              ) : visibleLabs.length === 0 ? (
+                <div className="empty-map-state">
+                  <p>No lab matches the current filter.</p>
+                </div>
+              ) : (
+                visibleLabs.map((lab) => {
+                  const stations = stationsByLab[lab.id] ?? [];
+                  return (
+                    <div className="grid-section" key={lab.id}>
+                      <div className="grid-header-row">
+                        <h3 className="grid-header-title">
+                          <b>{lab.name}</b> · floor status
+                        </h3>
+                        <span className="badge-count">{stations.length} stations</span>
+                      </div>
+
+                      {stations.length === 0 ? (
+                        <div className="empty-map-state">
+                          <p>No stations registered for this lab yet.</p>
+                          <p className="text-muted">Use the station manager on the right to add some.</p>
+                        </div>
+                      ) : (
+                        <div className="stations-grid">
+                          {stations.map((station) => {
+                            const status = getStationStatus(station.id);
+                            const isSelected = selected?.station.id === station.id;
+                            return (
+                              <button
+                                key={station.id}
+                                type="button"
+                                className={`station-tile tile-${status.color} ${isSelected ? "selected" : ""}`}
+                                onClick={() => setSelected({ station, labId: lab.id })}
+                              >
+                                <MonitorIcon />
+                                <span className="tile-label">{station.station_number}</span>
+                                {status.tickets.length > 0 && (
+                                  <div className="active-ticket-count-pill">{status.tickets.length}</div>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Sidebar Editor / Info Pane */}
+            <div className="editor-section">
+              {selected ? (
+                <div className="pane-card selected-station-pane animate-fade-in">
+                  <div className="pane-header">
+                    <div>
+                      <h4>Station {selected.station.station_number}</h4>
+                      <span className="text-muted">Room: {selectedLabName}</span>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm btn-delete-station"
+                      onClick={() => handleDeleteStation(selected.labId, selected.station.id)}
+                    >
+                      Delete Station
+                    </button>
+                  </div>
+
+                  <div className="pane-body">
+                    {(() => {
+                      const status = getStationStatus(selected.station.id);
+                      return (
+                        <>
+                          <div className="status-indicator">
+                            <span className={`dot dot-${status.color}`}></span>
+                            <strong>Status: {status.label}</strong>
+                          </div>
+
+                          {status.tickets.length > 0 ? (
+                            <div className="station-active-tickets">
+                              <h5>Active Tickets</h5>
+                              <div className="ticket-pane-list">
+                                {status.tickets.map((t) => (
+                                  <div key={t.id} className="ticket-pane-item">
+                                    <div className="ticket-pane-header">
+                                      <span className="ticket-pane-id">{t.id}</span>
+                                      <span className={`status-pill ${t.status === "in_progress" ? "status-progress" : "status-open"}`}>
+                                        {t.status === "in_progress" ? "In progress" : "Open"}
+                                      </span>
+                                    </div>
+                                    <p className="ticket-pane-issue">{t.issue}</p>
+                                    <div className="ticket-pane-footer">
+                                      <span className="priority-tag">{t.priority}</span>
+                                      <button
+                                        type="button"
+                                        className="btn btn-primary btn-xs"
+                                        onClick={() => onViewTicket(t)}
+                                      >
+                                        Manage Ticket
+                                      </button>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="station-no-tickets-state">
+                              <p>No active issues reported for this station.</p>
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-sm btn-report-here"
+                                onClick={() =>
+                                  onReportIssueAtStation(
+                                    selected.station.id,
+                                    selected.station.station_number
+                                  )
+                                }
+                              >
+                                Report an Issue Here
+                              </button>
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </div>
+                </div>
+              ) : (
+                <div className="pane-card placeholder-pane">
+                  <p>Click any station tile in any lab to inspect details, view active tickets, or delete it.</p>
+                </div>
+              )}
+
+              {/* Admin Station Creation Tools — acts on whichever lab is picked here */}
+              <div className="pane-card station-admin-tools">
+                <h4>Register Station</h4>
+                <div className="form-group" style={{ marginBottom: 12 }}>
+                  <label htmlFor="admin-lab-select">Lab</label>
+                  <select
+                    id="admin-lab-select"
+                    className="input-select"
+                    value={adminLabId ?? ""}
+                    onChange={(e) => setAdminLabId(Number(e.target.value))}
+                  >
+                    {labs.map((l) => (
+                      <option key={l.id} value={l.id}>
+                        {l.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <form onSubmit={handleAddStation} className="form-station-add">
+                  <div className="form-row-inline">
+                    <input
+                      type="text"
+                      className="input-field inline-input"
+                      placeholder="e.g. 05"
+                      value={newStationNumber}
+                      onChange={(e) => setNewStationNumber(e.target.value)}
+                      required
+                    />
+                    <button type="submit" className="btn btn-primary btn-sm">
+                      Add
+                    </button>
+                  </div>
+                </form>
+
+                <hr className="divider-soft" />
+
+                <h4>Bulk Add Stations</h4>
+                <form onSubmit={handleBulkAdd} className="form-station-bulk">
+                  <p className="form-help-text">Generate a range of stations (e.g. 1 to 24) for the lab selected above.</p>
+                  <div className="form-row-inline">
+                    <input
+                      type="number"
+                      min="1"
+                      max="100"
+                      className="input-field inline-input"
+                      placeholder="Start"
+                      value={bulkStart}
+                      onChange={(e) => setBulkStart(e.target.value)}
+                      required
+                    />
+                    <span className="join-dash">to</span>
+                    <input
+                      type="number"
+                      min="1"
+                      max="100"
+                      className="input-field inline-input"
+                      placeholder="End"
+                      value={bulkEnd}
+                      onChange={(e) => setBulkEnd(e.target.value)}
+                      required
+                    />
+                    <button type="submit" className="btn btn-ghost btn-sm">
+                      Generate
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        </>
       )}
     </div>
   );

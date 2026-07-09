@@ -121,13 +121,12 @@
   margin-top: 2px;
 }
 
-.health-good { border-left: 3px solid var(--teal); }
+/* Status is communicated via the text color only — no colored left
+   border strip on the row itself. */
 .health-good .lab-status-text { color: var(--teal); }
 
-.health-warning { border-left: 3px solid var(--accent); }
 .health-warning .lab-status-text { color: var(--accent); }
 
-.health-critical { border-left: 3px solid var(--danger); }
 .health-critical .lab-status-text { color: var(--danger); }
 
 /* Category Metric Bars */

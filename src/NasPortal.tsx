@@ -71,6 +71,9 @@ export default function NasPortal() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [busyTicketId, setBusyTicketId] = useState<string | null>(null);
 
+  // Ticket currently shown in the inspector panel (Received / My tickets).
+  const [inspectedTicket, setInspectedTicket] = useState<TicketWithDetails | null>(null);
+
   // ---------- report form state ----------
   const [labId, setLabId] = useState("");
   const [stations, setStations] = useState<Station[]>([]);
@@ -124,6 +127,14 @@ export default function NasPortal() {
   );
   const resolved = useMemo(() => queue.filter((t) => t.status === "resolved"), [queue]);
 
+  // Keep the inspected ticket in sync whenever the queue refreshes
+  // (e.g. after claiming it, its status changes from under it).
+  useEffect(() => {
+    if (!inspectedTicket) return;
+    const updated = queue.find((t) => t.id === inspectedTicket.id);
+    setInspectedTicket(updated ?? null);
+  }, [queue]);
+
   const handleClaim = async (ticketId: string) => {
     setActionError(null);
     setBusyTicketId(ticketId);
@@ -157,6 +168,7 @@ export default function NasPortal() {
     try {
       await forwardTicket(ticketId);
       await loadAll();
+      setInspectedTicket(null);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Couldn't forward that ticket.");
     } finally {
@@ -245,7 +257,7 @@ export default function NasPortal() {
     },
     {
       key: "received",
-      label: "Received tickets",
+      label: "New tickets",
       icon: (
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
           <path d="M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v3a2 2 0 0 0 0 4v3a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-3a2 2 0 0 0 0-4V7Z" />
@@ -255,7 +267,7 @@ export default function NasPortal() {
     },
     {
       key: "mine",
-      label: "My tickets",
+      label: "Claimed tickets",
       icon: (
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
           <path d="M9 11l3 3 8-8" />
@@ -287,35 +299,134 @@ export default function NasPortal() {
 
   function TicketRow({ ticket, action }: { ticket: TicketWithDetails; action: "claim" | "work" | "none" }) {
     const busy = busyTicketId === ticket.id;
+    const isInspected = inspectedTicket?.id === ticket.id;
     return (
-      <div className="queue-row">
-        <span className="ticket-id-badge">{ticket.id}</span>
-        <div>
-          <p className="queue-issue-title">{ticket.category}</p>
-          <span className="queue-issue-loc">{locationText(ticket)}</span>
+      <div className={`queue-row ${isInspected ? "row-selected" : ""}`} style={{ display: "flex", alignItems: "center", gap: 16, padding: "12px 16px" }}>
+        <span className="ticket-id-badge" style={{ flexShrink: 0 }}>{ticket.id}</span>
+        
+        <div style={{ flex: 1, minWidth: "150px" }}>
+          <p className="queue-issue-title" style={{ margin: "0 0 4px 0", fontWeight: 600 }}>
+            {ticket.category}
+          </p>
+          <span className="queue-issue-loc" style={{ display: "block", fontSize: "0.85em", opacity: 0.8 }}>
+            {locationText(ticket)}
+          </span>
         </div>
-        <span className={`priority-pill ${PRIORITY_CLASS[ticket.priority] ?? "priority-normal"}`}>
+        
+        <span className={`priority-pill ${PRIORITY_CLASS[ticket.priority] ?? "priority-normal"}`} style={{ flexShrink: 0 }}>
           {ticket.priority}
         </span>
-        <span className={`status-pill ${STATUS_CLASS[ticket.status]}`}>
+        
+        <span className={`status-pill ${STATUS_CLASS[ticket.status]}`} style={{ flexShrink: 0 }}>
           {STATUS_LABEL[ticket.status]}
         </span>
-        {action === "claim" && (
-          <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => handleClaim(ticket.id)}>
-            {busy ? "Claiming..." : "Claim"}
+        
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={() => setInspectedTicket(ticket)}
+          >
+            Inspect
           </button>
-        )}
-        {action === "work" && (
-          <div style={{ display: "flex", gap: 8 }}>
-            <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => handleResolve(ticket.id)}>
-              {busy ? "..." : "Fixed"}
+          {action === "claim" && (
+            <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => handleClaim(ticket.id)}>
+              {busy ? "Claiming..." : "Claim"}
             </button>
-            <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => handleForward(ticket.id)}>
-              {busy ? "..." : "Forward to IT"}
-            </button>
+          )}
+          {action === "work" && (
+            <>
+              <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => handleResolve(ticket.id)}>
+                {busy ? "..." : "Fixed"}
+              </button>
+              <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => handleForward(ticket.id)}>
+                {busy ? "..." : "Forward to IT"}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  function TicketInspector({ action }: { action: "claim" | "work" | "none" }) {
+    if (!inspectedTicket) {
+      return (
+        <div className="pane-card placeholder-pane">
+          <p>Click "Inspect" on any ticket to see its full details here.</p>
+        </div>
+      );
+    }
+    const busy = busyTicketId === inspectedTicket.id;
+    return (
+      <div className="pane-card ticket-inspector-card animate-fade-in">
+        <div className="inspector-title-row">
+          <div>
+            <h3>{inspectedTicket.id}</h3>
+            <span className={`status-pill ${STATUS_CLASS[inspectedTicket.status]}`}>
+              {STATUS_LABEL[inspectedTicket.status]}
+            </span>
           </div>
-        )}
-        {action === "none" && <span />}
+          <button type="button" className="btn-close-pane" onClick={() => setInspectedTicket(null)}>
+            ×
+          </button>
+        </div>
+
+        <div className="inspector-body">
+          <div className="details-section-box">
+            <h5>Issue</h5>
+            <p className="detail-item"><strong>Category:</strong> {inspectedTicket.category}</p>
+            <p className="detail-item"><strong>Location:</strong> {locationText(inspectedTicket)}</p>
+            <p className="detail-item">
+              <strong>Priority:</strong>{" "}
+              <span className={`priority-pill ${PRIORITY_CLASS[inspectedTicket.priority] ?? "priority-normal"}`}>
+                {inspectedTicket.priority}
+              </span>
+            </p>
+            <p className="detail-item"><strong>Reported:</strong> {new Date(inspectedTicket.created_at).toLocaleString()}</p>
+            {inspectedTicket.resolved_at && (
+              <p className="detail-item text-green">
+                <strong>Resolved:</strong> {new Date(inspectedTicket.resolved_at).toLocaleString()}
+              </p>
+            )}
+            <div className="detail-description-block">
+              <strong>Description:</strong>
+              <p className="issue-desc-text">{inspectedTicket.issue}</p>
+            </div>
+          </div>
+
+          {action !== "none" && (
+            <div className="details-section-box actions-form-box">
+              <h5>Actions</h5>
+              {action === "claim" && (
+                <button
+                  className="btn btn-primary btn-block-action"
+                  disabled={busy}
+                  onClick={() => handleClaim(inspectedTicket.id)}
+                >
+                  {busy ? "Claiming..." : "Claim this ticket"}
+                </button>
+              )}
+              {action === "work" && (
+                <>
+                  <button
+                    className="btn btn-primary btn-block-action"
+                    disabled={busy}
+                    onClick={() => handleResolve(inspectedTicket.id)}
+                  >
+                    {busy ? "..." : "Mark as fixed"}
+                  </button>
+                  <button
+                    className="btn btn-ghost btn-block-action margin-top-10"
+                    disabled={busy}
+                    onClick={() => handleForward(inspectedTicket.id)}
+                  >
+                    {busy ? "..." : "Forward to IT department"}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     );
   }
@@ -403,7 +514,10 @@ export default function NasPortal() {
             key={item.key}
             type="button"
             className={`nav-item nav-item-button ${view === item.key ? "active" : ""}`}
-            onClick={() => setView(item.key)}
+            onClick={() => {
+              setView(item.key);
+              setInspectedTicket(null);
+            }}
           >
             {item.icon}
             {item.label}
@@ -502,38 +616,53 @@ export default function NasPortal() {
         {view === "report" && <div className="content-grid-single">{reportForm}</div>}
 
         {view === "received" && (
-          <div className="card">
-            <div className="card-head">
-              <h2 className="card-title">Received tickets</h2>
+          <div className="content-grid">
+            <div className="card">
+              <div className="card-head">
+                <h2 className="card-title">Received tickets</h2>
+              </div>
+              {received.length === 0 && <p className="empty-state">Queue is empty — nice work.</p>}
+              {received.map((ticket) => (
+                <TicketRow key={ticket.id} ticket={ticket} action="claim" />
+              ))}
             </div>
-            {received.length === 0 && <p className="empty-state">Queue is empty — nice work.</p>}
-            {received.map((ticket) => (
-              <TicketRow key={ticket.id} ticket={ticket} action="claim" />
-            ))}
+            <div className="ticket-inspector-column">
+              <TicketInspector action="claim" />
+            </div>
           </div>
         )}
 
         {view === "mine" && (
-          <div className="card">
-            <div className="card-head">
-              <h2 className="card-title">My tickets</h2>
+          <div className="content-grid">
+            <div className="card">
+              <div className="card-head">
+                <h2 className="card-title">My tickets</h2>
+              </div>
+              {mine.length === 0 && <p className="empty-state">You haven't claimed any tickets yet.</p>}
+              {mine.map((ticket) => (
+                <TicketRow key={ticket.id} ticket={ticket} action="work" />
+              ))}
             </div>
-            {mine.length === 0 && <p className="empty-state">You haven't claimed any tickets yet.</p>}
-            {mine.map((ticket) => (
-              <TicketRow key={ticket.id} ticket={ticket} action="work" />
-            ))}
+            <div className="ticket-inspector-column">
+              <TicketInspector action="work" />
+            </div>
           </div>
         )}
 
         {view === "resolved" && (
-          <div className="card">
-            <div className="card-head">
-              <h2 className="card-title">Resolved tickets</h2>
+          <div className="content-grid">
+            <div className="card">
+              <div className="card-head">
+                <h2 className="card-title">Resolved tickets</h2>
+              </div>
+              {resolved.length === 0 && <p className="empty-state">Nothing resolved yet.</p>}
+              {resolved.map((ticket) => (
+                <TicketRow key={ticket.id} ticket={ticket} action="none" />
+              ))}
             </div>
-            {resolved.length === 0 && <p className="empty-state">Nothing resolved yet.</p>}
-            {resolved.map((ticket) => (
-              <TicketRow key={ticket.id} ticket={ticket} action="none" />
-            ))}
+            <div className="ticket-inspector-column">
+              <TicketInspector action="none" />
+            </div>
           </div>
         )}
 
