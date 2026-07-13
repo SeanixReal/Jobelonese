@@ -1,32 +1,102 @@
-# React + TypeScript + Vite
+# TechFix — CIT-U Computer Lab Support
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+TechFix is a ticketing app for the computer labs at Cebu Institute of Technology – University (CIT-U).
+Students flag broken equipment, and lab/IT staff work a single live queue instead of paper logs and group chats.
 
-Currently, two official plugins are available:
+> **Prototype status.** This is a student capstone prototype built on React + Vite + Supabase.
+> Several parts are incomplete or inconsistent — see the [open issues](https://github.com/SeanixReal/Jobelonese/issues)
+> and the "Known gaps" section below before relying on any flow end-to-end.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Documentation
 
-## React Compiler
+| Doc | What's inside |
+| --- | --- |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System overview, tech stack, component map, routing/auth flow (diagrams) |
+| [docs/DATA_MODEL.md](docs/DATA_MODEL.md) | Entity-relationship diagram, tables, columns, RLS notes |
+| [docs/WORKFLOWS.md](docs/WORKFLOWS.md) | Ticket lifecycle, sign-up / sign-in sequences, staff queue flow (diagrams) |
+| [AGENTS.md](AGENTS.md) | Orientation for AI coding agents working in this repo |
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Tech stack
 
-## Expanding the Oxlint configuration
+- **Frontend:** React 19 + TypeScript, bundled with Vite 8
+- **Backend:** Supabase (Postgres + Auth / GoTrue)
+- **Lint:** Oxlint
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
+## Getting started
 
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+### 1. Prerequisites
+- Node.js 20+ and npm
+- A Supabase project (this one is codenamed **techfix**)
+
+### 2. Install
+```bash
+npm install
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+### 3. Configure environment
+Create a `.env.local` in the repo root (Vite reads `VITE_`-prefixed vars):
+```
+VITE_SUPABASE_URL=https://<your-project>.supabase.co
+VITE_SUPABASE_ANON_KEY=<your-anon-key>
+```
+> There is not yet a committed `.env.example` — tracked in
+> [#25](https://github.com/SeanixReal/Jobelonese/issues/25).
+
+### 4. Provision the database
+Run the SQL in [`DATABASE_SETUP.sql`](DATABASE_SETUP.sql) in the Supabase SQL Editor.
+> ⚠️ The committed schema is currently **out of sync** with the app and is missing the
+> `tickets`, `labs`, `stations`, and `ticket_assignments` tables. See
+> [#4](https://github.com/SeanixReal/Jobelonese/issues/4) and
+> [#5](https://github.com/SeanixReal/Jobelonese/issues/5). The intended schema is documented in
+> [docs/DATA_MODEL.md](docs/DATA_MODEL.md).
+
+### 5. Run
+```bash
+npm run dev      # start the dev server
+npm run build    # typecheck (tsc -b) + production build
+npm run lint     # oxlint
+```
+
+## User roles
+
+| Role | Purpose |
+| --- | --- |
+| `student` | Reports issues and tracks their own tickets |
+| `nas` | Non-academic scholars staffing labs; first-line queue |
+| `it` | IT department; resolves escalated tickets |
+| `cpe_faculty` | Faculty monitoring lab status |
+
+> Only the **student** experience (`StudentPortal`) is currently built. The staff/IT/NAS queue
+> functions exist in `src/lib.ts` but have no UI yet — [#18](https://github.com/SeanixReal/Jobelonese/issues/18).
+
+## Project structure
+
+```
+src/
+  App.tsx            # top-level view router (home / signin / signup / portal)
+  main.tsx           # React entry point
+  home.tsx           # marketing landing page
+  signin.tsx         # sign-in form
+  signup.tsx         # sign-up form
+  studentportal.tsx  # student dashboard (report + track tickets)
+  ticketcard.tsx     # presentational ticket card (mock/marketing data)
+  lib.ts             # Supabase client + typed auth/ticket/lab data access  <- primary API
+  authService.ts     # older parallel auth layer (to be consolidated, #14)
+  CreateClient.ts    # older parallel Supabase client (to be consolidated, #14)
+docs/                # architecture, data model, workflows
+DATABASE_SETUP.sql   # Supabase schema (currently incomplete)
+```
+
+## Known gaps
+
+The app is under active QA. The highest-impact open issues:
+
+- **Critical:** schema mismatch & missing tables ([#4](https://github.com/SeanixReal/Jobelonese/issues/4), [#5](https://github.com/SeanixReal/Jobelonese/issues/5)), no profile-insert trigger ([#6](https://github.com/SeanixReal/Jobelonese/issues/6)), role value inconsistency ([#8](https://github.com/SeanixReal/Jobelonese/issues/8))
+- **High:** ticket data leak ([#9](https://github.com/SeanixReal/Jobelonese/issues/9)), self-selected roles ([#10](https://github.com/SeanixReal/Jobelonese/issues/10)), duplicate clients ([#14](https://github.com/SeanixReal/Jobelonese/issues/14)), missing staff portal ([#18](https://github.com/SeanixReal/Jobelonese/issues/18))
+
+See the full list in [Issues](https://github.com/SeanixReal/Jobelonese/issues).
+
+## Credits
+
+Designed for **Cebu Institute of Technology – University** by
+Conde, Seanpaul Vincent · Mahinay, Jobelon A. · Orejela, Prince Daniel R. · Magdadaro, Adrianne.
