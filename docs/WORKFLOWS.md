@@ -51,8 +51,16 @@ sequenceDiagram
     end
     A-->>F: { success, user, profile }
     F->>APP: goTo(role == student ? portal : home)
-    Note over APP: ⚠️ onAuthStateChange forces "portal" for ANY session,<br/>overriding the role redirect (#16)
-    APP->>U: render StudentPortal
+    APP->>APP: onAuthStateChange -> load profile
+    alt role = student or cpe_faculty
+        APP->>U: render StudentPortal
+    else role = nas
+        APP->>U: render NasPortal
+    else role = it
+        APP->>U: render ITPortal
+    else role = admin
+        APP->>U: render AdminPortal
+    end
 ```
 
 ## Session bootstrap on load
@@ -90,12 +98,12 @@ sequenceDiagram
     L-->>P: profile, tickets, labs
     St->>P: pick lab -> triggers getStations(labId)
     L-->>P: stations
-    St->>P: choose category + description -> Submit
-    P->>L: createTicket({ labId, stationId?, category, description })
-    L->>DB: insert into tickets (reported_by = auth.uid())
+    St->>P: choose category + issue -> Submit
+    P->>L: createTicket({ labId, stationId?, category, issue })
+    L->>DB: insert into tickets (user_id = auth.uid())
     DB-->>L: new ticket
     P->>L: loadAll() (refresh)
-    Note over P,DB: ⚠️ getMyTickets has no reported_by filter -> returns<br/>everyone's tickets unless RLS blocks it (#9)
+    Note over P,DB: ⚠️ getMyTickets has no user_id filter in application code.<br/>It must be protected by a correct RLS owner policy.
 ```
 
 ## Ticket lifecycle (state machine)
@@ -103,7 +111,7 @@ sequenceDiagram
 ```mermaid
 stateDiagram-v2
     [*] --> open: createTicket()<br/>current_handler = nas
-    open --> in_progress: claimTicket()<br/>+ ticket_assignments row
+    open --> in_progress: claimTicket()<br/>assigned_to = auth.uid()
     in_progress --> resolved: resolveTicket()<br/>set resolved_at
     open --> open: forwardTicket()<br/>current_handler nas -> it
     in_progress --> resolved
@@ -116,10 +124,10 @@ stateDiagram-v2
     end note
 ```
 
-## Staff queue (designed, not yet built)
+## Staff queue
 
-The functions exist in `src/lib.ts` but no component calls them — there is no staff UI
-([#18](https://github.com/SeanixReal/Jobelonese/issues/18)).
+NAS and IT portal components now call the queue functions. The flow below reflects the current
+implementation; access still depends on correct live RLS policies.
 
 ```mermaid
 flowchart TD
@@ -130,10 +138,10 @@ flowchart TD
         i1["tickets<br/>current_handler = it"]
     end
 
-    n1 -->|claimTicket| n2["in_progress<br/>+ assignment"]
+    n1 -->|claimTicket| n2["in_progress<br/>assigned_to = NAS user"]
     n2 -->|resolveTicket| done["resolved"]
     n1 -->|forwardTicket| i1
-    i1 -->|claimTicket| i2["in_progress<br/>+ assignment"]
+    i1 -->|claimTicket| i2["in_progress<br/>assigned_to = IT user"]
     i2 -->|resolveTicket| done
 ```
 

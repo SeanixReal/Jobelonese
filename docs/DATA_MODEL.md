@@ -1,160 +1,186 @@
 # Data Model
 
-This is the schema the **application code expects** (derived from the TypeScript interfaces in
-`src/lib.ts`). It is the intended target — the committed `DATABASE_SETUP.sql` is currently incomplete
-and inconsistent with it (see the callouts below and
-[#4](https://github.com/SeanixReal/Jobelonese/issues/4) /
-[#5](https://github.com/SeanixReal/Jobelonese/issues/5)).
+This document describes the schema used by the current application code and checked against the
+deployed `techfix` Supabase Data API on 2026-07-13. The repository SQL is not a complete source of
+truth: `DATABASE_SETUP.sql` creates only part of this model, while `IT_ROLE_MIGRATION.sql` adds the
+ticket-history fields and table.
 
 ## Entity-relationship diagram
 
 ```mermaid
 erDiagram
-    AUTH_USERS ||--|| USERS : "1:1 (id)"
+    AUTH_USERS ||--|| USERS : "profile mirror"
     USERS ||--o{ TICKETS : "reports"
+    USERS ||--o{ TICKETS : "assigned_to"
     LABS ||--o{ STATIONS : "has"
     LABS ||--o{ TICKETS : "located in"
     STATIONS ||--o{ TICKETS : "at (optional)"
-    TICKETS ||--o{ TICKET_ASSIGNMENTS : "assigned via"
-    USERS ||--o{ TICKET_ASSIGNMENTS : "assigned to"
+    TICKETS ||--o{ TICKET_HISTORY : "has history"
+    USERS ||--o{ TICKET_HISTORY : "performs"
 
     AUTH_USERS {
         uuid id PK
         string email
         jsonb user_metadata
-        timestamptz created_at
     }
     USERS {
         uuid id PK "FK -> auth.users.id"
         string email
         string fullname
-        string role "student|nas|it|cpe_faculty"
+        string role "student|nas|it|cpe_faculty|admin"
         string student_or_staff_id "nullable"
         string program "nullable"
         timestamptz created_at
     }
     LABS {
-        uuid id PK
+        int id PK
         string name
-        string location "nullable"
-        int station_count
+        timestamptz created_at
     }
     STATIONS {
-        uuid id PK
-        uuid lab_id FK
-        int station_number
-        string status "operational|flagged|offline"
+        int id PK
+        int lab_id FK
+        string station_number
+        timestamptz created_at
     }
     TICKETS {
-        uuid id PK
-        string ticket_code
-        uuid reported_by FK
-        uuid lab_id FK
-        uuid station_id FK "nullable"
+        string id PK "TCK-style identifier"
+        uuid user_id FK
+        int lab_id FK
+        int station_id FK "nullable"
         string category
-        string description
+        string issue
         string priority "normal|high"
         string status "open|in_progress|resolved"
         string current_handler "nas|it"
+        uuid assigned_to FK "nullable"
         timestamptz created_at
         timestamptz resolved_at "nullable"
+        timestamptz escalated_at "nullable"
+        uuid escalated_by FK "nullable"
+        string resolution_notes "nullable"
+        string internal_notes "nullable"
+        string closed_reason "nullable"
     }
-    TICKET_ASSIGNMENTS {
-        uuid id PK
-        uuid ticket_id FK
-        uuid assigned_to FK
+    TICKET_HISTORY {
+        int id PK
+        string ticket_id FK
+        string action
+        uuid performed_by FK "nullable"
+        string details "nullable"
+        timestamptz created_at
     }
 ```
+
+There is no `ticket_assignments` table in the deployed schema. Assignment is stored directly in
+`tickets.assigned_to`, as implemented by `claimTicket`, `claimTicketAsIt`, and the reassignment
+functions in `src/lib.ts`.
 
 ## Tables
 
 ### `users`
+
 Profile mirror of `auth.users`, keyed by the same `id`.
 
 | Column | Type | Notes |
 | --- | --- | --- |
-| `id` | uuid PK | references `auth.users(id)` ON DELETE CASCADE |
+| `id` | uuid PK | references `auth.users(id)` |
 | `email` | text | unique |
-| `fullname` | text | ⚠️ setup SQL calls this `fullName` → folds to `fullname`; keep it snake_case |
-| `role` | text | CHECK in (`student`,`nas`,`it`,`cpe_faculty`) |
-| `student_or_staff_id` | text | nullable — **missing from setup SQL** |
-| `program` | text | nullable — **missing from setup SQL** |
-| `created_at` | timestamptz | ⚠️ setup SQL calls this `createdAt` → `createdat` ([#4](https://github.com/SeanixReal/Jobelonese/issues/4)) |
+| `fullname` | text | used by `src/lib.ts` and the portals |
+| `role` | text | code supports `student`, `nas`, `it`, `cpe_faculty`, and `admin` |
+| `student_or_staff_id` | text | nullable |
+| `program` | text | nullable |
+| `created_at` | timestamptz | used by the application |
 
-> A row here should be created automatically when an `auth.users` row is inserted, via an
-> `AFTER INSERT` trigger copying `user_metadata`. That trigger does not exist yet
-> ([#6](https://github.com/SeanixReal/Jobelonese/issues/6)), so `getCurrentProfile()` fails for new users.
+The live table also exposes legacy `createdat` and `updatedat` columns from the original setup SQL;
+the application does not use them. There is no live `updated_at` column according to the schema probe.
+
+The repository does not define the `auth.users` profile-insert trigger. Without a working trigger or
+an equivalent server-side insert, a new Auth user can exist without a matching `public.users` row.
 
 ### `labs`
+
 | Column | Type | Notes |
 | --- | --- | --- |
-| `id` | uuid PK | |
-| `name` | text | |
-| `location` | text | nullable |
-| `station_count` | int | |
+| `id` | integer PK | referenced by tickets and stations |
+| `name` | text | laboratory name |
+| `created_at` | timestamptz | |
+
+The live table does not expose the `location` or `station_count` fields described by the previous
+documentation.
 
 ### `stations`
+
 | Column | Type | Notes |
 | --- | --- | --- |
-| `id` | uuid PK | |
-| `lab_id` | uuid FK | → `labs(id)` |
-| `station_number` | int | |
-| `status` | text | `operational` \| `flagged` \| `offline` |
+| `id` | integer PK | |
+| `lab_id` | integer FK | references `labs(id)` |
+| `station_number` | text | displayed as a station label/number |
+| `created_at` | timestamptz | |
+
+The live table does not expose the previously documented `status` field.
 
 ### `tickets`
+
 | Column | Type | Notes |
 | --- | --- | --- |
-| `id` | uuid PK | |
-| `ticket_code` | text | human-friendly code (e.g. `TCK-0847`); needs a default/generator |
-| `reported_by` | uuid FK | → `users(id)` |
-| `lab_id` | uuid FK | → `labs(id)` |
-| `station_id` | uuid FK | → `stations(id)`, nullable |
+| `id` | text PK | application expects a ticket identifier such as `TCK-0851` |
+| `user_id` | uuid FK | reporting user; this is not named `reported_by` |
+| `lab_id` | integer FK | references `labs(id)` |
+| `station_id` | integer FK | references `stations(id)`, nullable |
 | `category` | text | issue type |
-| `description` | text | |
-| `priority` | text | `normal` \| `high`, default `normal` |
-| `status` | text | `open` \| `in_progress` \| `resolved`, default `open` |
-| `current_handler` | text | `nas` \| `it` — new tickets should default to `nas` |
-| `created_at` | timestamptz | default `now()` |
+| `issue` | text | description supplied by the form; this is not named `description` |
+| `priority` | text | `normal` or `high` |
+| `status` | text | `open`, `in_progress`, or `resolved` |
+| `current_handler` | text | `nas` or `it` |
+| `assigned_to` | uuid FK | assigned staff user, nullable |
+| `created_at` | timestamptz | |
 | `resolved_at` | timestamptz | nullable |
+| `escalated_at` | timestamptz | nullable |
+| `escalated_by` | uuid FK | nullable |
+| `resolution_notes` | text | nullable |
+| `internal_notes` | text | nullable |
+| `closed_reason` | text | nullable |
 
-> `createTicket` does not set `ticket_code`, `status`, or `current_handler`, so the table must supply
-> defaults (and a `ticket_code` generator). Not present in setup SQL.
+`createTicket` supplies `user_id`, `lab_id`, `station_id`, `category`, `issue`, and `priority`.
+Database defaults must supply any other required values.
 
-### `ticket_assignments`
-Join rows written by `claimTicket` when a staffer picks up a ticket.
+### `ticket_history`
 
 | Column | Type | Notes |
 | --- | --- | --- |
-| `id` | uuid PK | |
-| `ticket_id` | uuid FK | → `tickets(id)` |
-| `assigned_to` | uuid FK | → `users(id)` |
+| `id` | serial PK | |
+| `ticket_id` | varchar FK | references `tickets(id)` |
+| `action` | text | e.g. claimed, resolved, escalated |
+| `performed_by` | uuid FK | references `users(id)`, nullable on delete |
+| `details` | text | nullable |
+| `created_at` | timestamptz | defaults to `now()` |
 
-## Row-Level Security (RLS)
+## Row-Level Security
 
-RLS is the only access control in this architecture (the anon key is public). Intended policies:
+The browser uses a publishable Supabase key, so authorization must be enforced by RLS and by
+server-side role controls.
 
-| Table | Policy intent |
+| Table | Required policy intent |
 | --- | --- |
-| `users` | A user may `SELECT`/`UPDATE` **only their own row**. `role` must **not** be self-updatable ([#11](https://github.com/SeanixReal/Jobelonese/issues/11)). |
-| `tickets` | Students `SELECT`/`INSERT` **only their own** (`reported_by = auth.uid()`). Staff (`nas`/`it`) may read their queue. |
-| `stations`, `labs` | Readable by any authenticated user. |
-| `ticket_assignments` | Insert/read limited to staff roles. |
+| `users` | A user may read/update only their own row; role must not be self-updatable. Staff/admin broad reads and role changes must be explicitly restricted. |
+| `tickets` | Students may insert/read only their own tickets. NAS and IT may read and update only the queues/actions assigned to their role. |
+| `labs`, `stations` | Authenticated users may read reference data; management writes are limited to IT/admin. |
+| `ticket_history` | Staff/admin may read appropriate history; inserts must be authenticated and tied to the acting user. |
 
-> Today only `users` has policies, and they permit self-updating `role`. The ticket/lab/station tables
-> have no policies because they don't exist yet. `getMyTickets` also fails to filter by owner in code
-> ([#9](https://github.com/SeanixReal/Jobelonese/issues/9)), so it currently depends entirely on RLS
-> that isn't there.
+The current client code still needs review against these policies: `getMyTickets()` does not add an
+explicit `user_id` filter, and role selection/passcodes are handled in the browser. The live schema
+probe confirmed table/column availability but did not expose policy definitions through the available
+connector permissions.
 
-## Enumerations (from `src/lib.ts`)
+## Enumerations used by the code
 
 | Type | Values |
 | --- | --- |
-| `Role` | `student`, `nas`, `it`, `cpe_faculty` |
+| `Role` | `student`, `nas`, `it`, `cpe_faculty`, `admin` |
 | `TicketStatus` | `open`, `in_progress`, `resolved` |
 | `TicketPriority` | `normal`, `high` |
 | `HandlerRole` | `nas`, `it` |
-| Station status | `operational`, `flagged`, `offline` |
 
-> Note the divergent duplicates elsewhere: `ticketcard.tsx` uses `in-progress` (hyphen) and
-> `signup.tsx` uses `cpe-faculty` (hyphen). Treat the `lib.ts` values above as canonical
-> ([#8](https://github.com/SeanixReal/Jobelonese/issues/8), [#15](https://github.com/SeanixReal/Jobelonese/issues/15)).
+The sign-up form currently offers `student`, `nas`, `it`, and `admin`; `cpe_faculty` is supported by
+the shared type and portal routing but is not currently offered in that form.

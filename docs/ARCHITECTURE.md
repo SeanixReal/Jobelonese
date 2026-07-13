@@ -11,7 +11,9 @@ flowchart LR
     subgraph Browser["Browser (SPA)"]
         UI["React 19 + Vite<br/>Views: home / signin / signup / portal"]
         LIB["src/lib.ts<br/>Supabase client + data access"]
+        AUTH_SVC["src/authService.ts<br/>legacy auth layer"]
         UI --> LIB
+        UI --> AUTH_SVC
     end
 
     subgraph Supabase["Supabase (techfix project)"]
@@ -22,13 +24,113 @@ flowchart LR
         RLS -.guards.-> DB
     end
 
-    LIB -- "signUp / signIn / getSession" --> AUTH
+    LIB -- "session + data access" --> AUTH
+    AUTH_SVC -- "signUp / signIn" --> AUTH
     LIB -- "select / insert / update (REST)" --> DB
 ```
 
 The anon key ships in the client bundle (this is expected for Supabase). **All real protection must
 come from RLS**, so any table the client touches needs policies. See
 [DATA_MODEL.md](DATA_MODEL.md) for the intended policies and the gaps.
+
+## Use case diagram
+
+The following use-case view reflects the current portal routing in `src/App.tsx`. CPE faculty is
+supported by the role type and uses the student portal, although the current sign-up form does not
+offer it as a selectable role.
+
+The diagram uses Mermaid flowchart notation for UML-style actors and use-case ellipses because
+Mermaid does not provide a native `usecaseDiagram` block.
+
+```mermaid
+flowchart LR
+    Student{{Student}}
+    Faculty{{CPE faculty}}
+    NAS{{NAS staff}}
+    IT{{IT administrator}}
+    Admin{{System administrator}}
+    Auth[(Supabase Auth)]
+    DB[(Supabase Postgres + RLS)]
+
+    subgraph TechFix["TechFix system"]
+        UCAuth([Register / sign in])
+        UCSignOut([Sign out])
+        UCProfile([View profile])
+        UCLabs([View labs and stations])
+        UCReport([Submit ticket])
+        UCTrack([Track own tickets])
+        UCQueue([View NAS queue])
+        UCClaim([Claim ticket])
+        UCResolve([Resolve ticket])
+        UCForward([Forward ticket to IT])
+        UCAllTickets([View all tickets])
+        UCAssign([Assign or reassign tickets])
+        UCNotes([Resolve or close with notes])
+        UCHistory([View ticket history])
+        UCLabAdmin([Manage laboratories])
+        UCUsers([Manage users and roles])
+        UCLogs([Review system logs])
+    end
+
+    Student --> UCAuth
+    Student --> UCSignOut
+    Student --> UCProfile
+    Student --> UCLabs
+    Student --> UCReport
+    Student --> UCTrack
+
+    Faculty --> UCAuth
+    Faculty --> UCSignOut
+    Faculty --> UCProfile
+    Faculty --> UCLabs
+    Faculty --> UCReport
+    Faculty --> UCTrack
+
+    NAS --> UCAuth
+    NAS --> UCSignOut
+    NAS --> UCProfile
+    NAS --> UCQueue
+    NAS --> UCClaim
+    NAS --> UCResolve
+    NAS --> UCForward
+    NAS --> UCReport
+
+    IT --> UCAuth
+    IT --> UCSignOut
+    IT --> UCProfile
+    IT --> UCAllTickets
+    IT --> UCAssign
+    IT --> UCNotes
+    IT --> UCHistory
+    IT --> UCLabAdmin
+    IT --> UCReport
+
+    Admin --> UCAuth
+    Admin --> UCSignOut
+    Admin --> UCProfile
+    Admin --> UCAllTickets
+    Admin --> UCHistory
+    Admin --> UCUsers
+    Admin --> UCLogs
+
+    UCAuth -.-> Auth
+    UCSignOut -.-> Auth
+    UCProfile -.-> DB
+    UCLabs -.-> DB
+    UCReport -.-> DB
+    UCTrack -.-> DB
+    UCQueue -.-> DB
+    UCClaim -.-> DB
+    UCResolve -.-> DB
+    UCForward -.-> DB
+    UCAllTickets -.-> DB
+    UCAssign -.-> DB
+    UCNotes -.-> DB
+    UCHistory -.-> DB
+    UCLabAdmin -.-> DB
+    UCUsers -.-> DB
+    UCLogs -.-> DB
+```
 
 ## Frontend component map
 
@@ -38,7 +140,10 @@ flowchart TD
     App -->|view=home| Home["home.tsx<br/>landing page"]
     App -->|view=signin| SignIn["signin.tsx"]
     App -->|view=signup| SignUp["signup.tsx"]
-    App -->|view=portal| Portal["studentportal.tsx"]
+    App -->|role=student or cpe_faculty| StudentPortal["studentportal.tsx"]
+    App -->|role=nas| NasPortal["NasPortal.tsx"]
+    App -->|role=it| ITPortal["ITPortal.tsx"]
+    App -->|role=admin| AdminPortal["AdminPortal.tsx"]
 
     Home --> TicketCard["ticketcard.tsx<br/>(mock display)"]
     SignIn --> TicketCard
@@ -47,7 +152,10 @@ flowchart TD
     SignIn --> AuthSvc["authService.ts ⚠️ legacy"]
     SignUp --> AuthSvc
     App --> Lib["lib.ts ✅ canonical"]
-    Portal --> Lib
+    StudentPortal --> Lib
+    NasPortal --> Lib
+    ITPortal --> Lib
+    AdminPortal --> Lib
 
     AuthSvc --> CreateClient["CreateClient.ts ⚠️ 2nd client"]
     Lib --> SupaClient["supabase client"]
@@ -55,7 +163,7 @@ flowchart TD
 ```
 
 > ⚠️ Two Supabase clients and two auth layers currently coexist. `signin`/`signup` use the legacy
-> `authService.ts` + `CreateClient.ts`, while `App`/`portal` use `lib.ts`. This should be consolidated
+> `authService.ts` + `CreateClient.ts`, while `App` and the portals use `lib.ts`. This should be consolidated
 > to a single client — [#14](https://github.com/SeanixReal/Jobelonese/issues/14).
 
 ## Routing & session bootstrap
@@ -73,28 +181,29 @@ stateDiagram-v2
     home --> signup: click "Get started"
     signup --> signin: account created
     signin --> portal: onAuthStateChange(session)
+    portal --> StudentPortal: role = student or cpe_faculty
+    portal --> NasPortal: role = nas
+    portal --> ITPortal: role = it
+    portal --> AdminPortal: role = admin
     portal --> home: signOut()
-
-    note right of portal
-        onAuthStateChange forces "portal"
-        for ANY session, which overrides
-        signin.tsx's role-based redirect (#16)
-    end note
 ```
 
-> The role-based redirect computed in `signin.tsx` is dead code because `onAuthStateChange` always
-> routes a signed-in user to `portal` — [#16](https://github.com/SeanixReal/Jobelonese/issues/16).
-> There is also no staff destination yet — [#18](https://github.com/SeanixReal/Jobelonese/issues/18).
+> `onAuthStateChange` sets the top-level view to `portal`; `App.tsx` then loads the profile and selects
+> `StudentPortal`, `NasPortal`, `ITPortal`, or `AdminPortal` from the role. The local redirect in
+> `signin.tsx` is therefore redundant for non-student roles, but the staff destinations now exist.
 
 ## Data access layer (`src/lib.ts`)
 
-All Supabase reads/writes are centralized here. Functions throw on error; callers handle it.
+Most Supabase reads/writes are centralized here. The sign-in and sign-up forms still use the legacy
+`authService.ts` layer, while the portals and session bootstrap use `lib.ts`.
 
 | Group | Functions |
 | --- | --- |
 | Auth | `signUp`, `signIn`, `signOut`, `getCurrentProfile` |
 | Tickets (student) | `createTicket`, `getMyTickets` |
-| Tickets (staff — no UI yet) | `getNasQueue`, `getItQueue`, `claimTicket`, `forwardTicket`, `resolveTicket` |
+| Tickets (NAS portal) | `getNasQueue`, `claimTicket`, `forwardTicket`, `resolveTicket` |
+| Tickets (IT portal) | `getAllTickets`, `claimTicketAsIt`, `revokeAndReassignTicket`, `resolveTicketWithNotes`, `closeTicket`, `deescalateTicket`, `getTicketHistory` |
+| Administration | `getAllUsers`, `updateUserRole`, `deleteUser`, `getAllTicketHistory` |
 | Reference data | `getLabs`, `getStations` |
 
 See [WORKFLOWS.md](WORKFLOWS.md) for how these compose into user journeys.
