@@ -16,13 +16,13 @@ incomplete flows and known inconsistencies (see [Issues](https://github.com/Sean
    ([#14](https://github.com/SeanixReal/Jobelonese/issues/14)). Do not add new call sites to them.
 2. **Do not create a second Supabase client.** Import the existing `supabase` from `src/lib.ts`.
    Multiple GoTrue clients cause session bugs.
-3. **Roles are `student | nas | it | cpe_faculty`** (underscore). `src/signup.tsx` and
-   `DATABASE_SETUP.sql` still use the hyphen form `cpe-faculty` — that's a bug
-   ([#8](https://github.com/SeanixReal/Jobelonese/issues/8)), not a pattern to copy. Use underscores.
+3. **Roles in the application are `student | nas | it | cpe_faculty | admin`** (underscore for
+   faculty). `DATABASE_SETUP.sql` still uses the hyphen form `cpe-faculty` and omits `admin` — that
+   is a schema bug, not a pattern to copy. Use the `src/lib.ts` values.
 4. **Never trust client-supplied roles.** Role must not be self-selected at signup or changeable via
    a self-service profile update ([#10](https://github.com/SeanixReal/Jobelonese/issues/10),
    [#11](https://github.com/SeanixReal/Jobelonese/issues/11)). Enforce server-side.
-5. **Scope queries to the current user.** e.g. ticket reads must filter by `reported_by` and be backed
+5. **Scope queries to the current user.** e.g. ticket reads must filter by `user_id` and be backed
    by RLS ([#9](https://github.com/SeanixReal/Jobelonese/issues/9)).
 6. **Keep types in sync with the DB.** Column names are snake_case (`fullname`, `created_at`,
    `student_or_staff_id`, `program`). Avoid `as unknown as` casts
@@ -60,6 +60,9 @@ verify changes with `npm run build` and by exercising the affected flow in the d
 | Student dashboard UI | `src/studentportal.tsx` |
 | Auth forms | `src/signin.tsx`, `src/signup.tsx` |
 | Landing page | `src/home.tsx` |
+| NAS queue UI | `src/NasPortal.tsx` |
+| IT queue and lab management UI | `src/ITPortal.tsx`, `src/LabMap.tsx` |
+| Admin UI | `src/AdminPortal.tsx` |
 | DB schema | `DATABASE_SETUP.sql` (incomplete — see docs/DATA_MODEL.md) |
 
 ## Before you finish a change
