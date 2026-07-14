@@ -7,6 +7,7 @@ import {
   createTicket,
   getLabs,
   getStations,
+  getUserFacingErrorMessage,
   signOut,
   subscribeToRealtimeChanges,
 } from "./lib.ts";
@@ -83,18 +84,19 @@ export default function StudentPortal() {
     setLoading(true);
     setError(null);
     try {
-      const [userData, userResult, ticketData, labData] = await Promise.all([
-        getCurrentProfile(),
-        supabase.auth.getUser(),
-        getMyTickets(),
-        getLabs(),
-      ]);
+      const userData = await getCurrentProfile();
+      if (!userData) throw new Error("Your session has expired. Please sign in again.");
+
+      const userResult = await supabase.auth.getUser();
+      if (userResult.error) throw userResult.error;
+
+      const [ticketData, labData] = await Promise.all([getMyTickets(), getLabs()]);
       setUser(userData);
       setEmail(userResult.data.user?.email ?? "");
       setTickets(ticketData);
       setLabs(labData);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load your dashboard.");
+      setError(getUserFacingErrorMessage(err, "Failed to load your dashboard."));
     } finally {
       setLoading(false);
     }
@@ -216,11 +218,18 @@ export default function StudentPortal() {
 
   if (error || !user) {
     return (
-      <div className="portal-loading">
-        {error ?? "Couldn't load your account profile details."}{" "}
-        <button className="btn btn-ghost" onClick={loadAll}>
-          Retry
-        </button>
+      <div className="portal-loading portal-error">
+        <div className="portal-error-content">
+          <p role="alert">{error ?? "Couldn't load your account profile details."}</p>
+          <div className="portal-error-actions">
+            <button className="btn btn-ghost" onClick={loadAll}>
+              Retry
+            </button>
+            <button className="btn btn-ghost" onClick={() => void handleLogout()}>
+              Sign out
+            </button>
+          </div>
+        </div>
       </div>
     );
   }

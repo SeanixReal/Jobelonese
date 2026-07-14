@@ -175,6 +175,52 @@ export async function signUp({
   return data;
 }
 
+export class ProfileNotReadyError extends Error {
+  constructor() {
+    super(
+      "Your CIT-U account is verified, but its TechFix profile is missing. Ask an administrator to run the database profile repair, then retry."
+    );
+    this.name = "ProfileNotReadyError";
+  }
+}
+
+interface ErrorLike {
+  code?: string;
+  message?: string;
+}
+
+function isErrorLike(value: unknown): value is ErrorLike {
+  if (typeof value !== "object" || value === null) return false;
+
+  const candidate = value as { code?: unknown; message?: unknown };
+  return (
+    (candidate.code === undefined || typeof candidate.code === "string") &&
+    (candidate.message === undefined || typeof candidate.message === "string")
+  );
+}
+
+export function getUserFacingErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof ProfileNotReadyError) return error.message;
+
+  const errorLike = isErrorLike(error) ? error : null;
+  switch (errorLike?.code) {
+    case "42501":
+    case "PGRST301":
+      return "TechFix could not read the data needed for this page. Ask an administrator to check the database permissions, then retry.";
+    case "42P01":
+    case "PGRST204":
+      return "The TechFix database setup is incomplete. Ask an administrator to apply the database migration, then retry.";
+    case "PGRST116":
+      return "Your TechFix account profile is missing. Ask an administrator to run the database profile repair, then retry.";
+    default:
+      break;
+  }
+
+  if (error instanceof Error && error.message.trim()) return error.message;
+  if (errorLike?.message?.trim()) return errorLike.message;
+  return fallback;
+}
+
 export async function resendSignupConfirmation(email: string) {
   const normalizedEmail = email.trim().toLowerCase();
   if (!isCitEmail(normalizedEmail)) {
@@ -235,11 +281,18 @@ export async function signOut() {
 export async function getCurrentProfile(): Promise<Profile | null> {
   const {
     data: { user },
+    error: authError,
   } = await supabase.auth.getUser();
+  if (authError) throw authError;
   if (!user) return null;
 
-  const { data, error } = await supabase.from("users").select("*").eq("id", user.id).single();
+  const { data, error } = await supabase
+    .from("users")
+    .select("*")
+    .eq("id", user.id)
+    .maybeSingle();
   if (error) throw error;
+  if (!data) throw new ProfileNotReadyError();
   return data;
 }
 

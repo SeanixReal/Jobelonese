@@ -7,7 +7,7 @@ import StudentPortal from "./studentportal";
 import NasPortal from "./NasPortal";
 import ITPortal from "./ITPortal";
 import AdminPortal from "./AdminPortal";
-import { supabase, getCurrentProfile } from "./lib.ts";
+import { getCurrentProfile, getUserFacingErrorMessage, signOut, supabase } from "./lib.ts";
 import type { Role } from "./lib.ts";
 import "./App.css";
 
@@ -16,6 +16,7 @@ export type View = BaseView | "portal";
 function App() {
   const [view, setView] = useState<View>("home");
   const [role, setRole] = useState<Role | null>(null);
+  const [sessionError, setSessionError] = useState<string | null>(null);
   const [checkingSession, setCheckingSession] = useState(true);
   const recoveryMode = useRef(false);
 
@@ -27,17 +28,34 @@ function App() {
   const syncSession = async (hasSession: boolean) => {
     if (!hasSession) {
       setRole(null);
+      setSessionError(null);
       setView("home");
       return;
     }
     // Session exists — figure out which portal this account should land on.
+    setSessionError(null);
     try {
       const profile = await getCurrentProfile();
       setRole(profile?.role ?? null);
-    } catch {
+    } catch (error) {
       setRole(null);
+      setSessionError(
+        getUserFacingErrorMessage(error, "We couldn't load your account. Please try again.")
+      );
     }
     setView("portal");
+  };
+
+  const retrySession = () => {
+    void syncSession(true);
+  };
+
+  const handleSessionSignOut = async () => {
+    try {
+      await signOut();
+    } catch (error) {
+      setSessionError(getUserFacingErrorMessage(error, "Could not sign out. Please try again."));
+    }
   };
 
   useEffect(() => {
@@ -86,6 +104,24 @@ function App() {
 
   if (checkingSession) {
     return <div className="portal-loading">Loading...</div>;
+  }
+
+  if (view === "portal" && sessionError) {
+    return (
+      <div className="portal-loading portal-error">
+        <div className="portal-error-content">
+          <p role="alert">{sessionError}</p>
+          <div className="portal-error-actions">
+            <button className="btn btn-ghost" onClick={retrySession}>
+              Retry
+            </button>
+            <button className="btn btn-ghost" onClick={() => void handleSessionSignOut()}>
+              Sign out
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   switch (view) {

@@ -52,7 +52,12 @@ sequenceDiagram
     A->>S: auth.signInWithPassword
     S-->>A: session + user
     A->>DB: select * from users where id = user.id (maybeSingle)
-    DB-->>APP: server-owned profile
+    alt profile exists
+        DB-->>APP: server-owned profile
+    else profile missing
+        DB-->>APP: profile setup error
+        APP-->>U: explain that an administrator must run the profile repair SQL
+    end
     A-->>F: user + session
     F->>APP: goTo(portal)
     APP->>APP: onAuthStateChange -> load profile

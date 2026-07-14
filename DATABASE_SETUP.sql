@@ -266,6 +266,37 @@ CREATE POLICY "Admins can view all user profiles"
   TO authenticated
   USING (private.is_current_user_admin());
 
+-- Repair Auth accounts created before the profile trigger was installed.
+-- This is intentionally a review-only migration step: it runs only when an
+-- administrator executes this SQL in the intended Supabase project.
+INSERT INTO public.users (
+  id,
+  email,
+  fullname,
+  role,
+  student_or_staff_id,
+  program
+)
+SELECT
+  auth_user.id,
+  lower(btrim(auth_user.email)),
+  coalesce(
+    nullif(btrim(auth_user.raw_user_meta_data ->> 'full_name'), ''),
+    split_part(lower(btrim(auth_user.email)), '@', 1)
+  ),
+  'student',
+  nullif(btrim(auth_user.raw_user_meta_data ->> 'student_or_staff_id'), ''),
+  nullif(btrim(auth_user.raw_user_meta_data ->> 'program'), '')
+FROM auth.users AS auth_user
+WHERE auth_user.email IS NOT NULL
+  AND lower(btrim(auth_user.email)) ~ '@cit[.]edu$'
+  AND NOT EXISTS (
+    SELECT 1
+    FROM public.users AS profile
+    WHERE profile.id = auth_user.id
+  )
+ON CONFLICT DO NOTHING;
+
 -- =========================================================
 -- Issue #40: canonical station numbers and database uniqueness
 -- =========================================================
