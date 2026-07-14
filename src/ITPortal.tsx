@@ -15,6 +15,7 @@ import {
   deleteLab,
   createTicket,
   signOut,
+  subscribeToRealtimeChanges,
 } from "./lib.ts";
 import type { Lab, Station, TicketWithDetails, Profile } from "./lib.ts";
 import LabMap from "./LabMap";
@@ -108,7 +109,23 @@ export default function ITPortal() {
       refreshDataSilently();
     }, 12000);
 
-    return () => clearInterval(interval);
+    const unsubscribe = subscribeToRealtimeChanges(
+      [
+        { table: "tickets" },
+        { table: "users" },
+        { table: "labs" },
+        { table: "stations" },
+        { table: "ticket_history" },
+      ],
+      () => {
+        void refreshDataSilently();
+      }
+    );
+
+    return () => {
+      clearInterval(interval);
+      unsubscribe();
+    };
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -195,12 +212,27 @@ export default function ITPortal() {
 
   // Submitting ticket load stations
   useEffect(() => {
-    if (reportLabId) {
-      getStations(reportLabId).then(setReportStationsList).catch(console.error);
-    } else {
-      setReportStationsList([]);
-    }
+    let active = true;
+    setReportStationsList([]);
     setReportStationId("");
+
+    if (!reportLabId) {
+      return () => {
+        active = false;
+      };
+    }
+
+    getStations(reportLabId)
+      .then((nextStations) => {
+        if (active) setReportStationsList(nextStations);
+      })
+      .catch((err) => {
+        if (active) setActionError(err instanceof Error ? err.message : "Failed to load stations.");
+      });
+
+    return () => {
+      active = false;
+    };
   }, [reportLabId]);
 
   // Load ticket log history when ticket is selected

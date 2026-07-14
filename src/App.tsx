@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Home, { type View as BaseView } from "./home";
 import SignIn from "./signin";
 import SignUp from "./signup";
+import ResetPassword from "./resetpassword";
 import StudentPortal from "./studentportal";
 import NasPortal from "./NasPortal";
 import ITPortal from "./ITPortal";
@@ -16,6 +17,7 @@ function App() {
   const [view, setView] = useState<View>("home");
   const [role, setRole] = useState<Role | null>(null);
   const [checkingSession, setCheckingSession] = useState(true);
+  const recoveryMode = useRef(false);
 
   const goTo = (next: View) => {
     setView(next);
@@ -39,17 +41,44 @@ function App() {
   };
 
   useEffect(() => {
+    // A recovery session must stay on the password form. Supabase emits
+    // USER_UPDATED after the new password is saved, so do not route that
+    // temporary session into a portal before the user signs in normally.
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "PASSWORD_RECOVERY") {
+        recoveryMode.current = true;
+        setRole(null);
+        setView("reset-password");
+        setCheckingSession(false);
+        return;
+      }
+
+      if (recoveryMode.current && event !== "SIGNED_OUT") {
+        setCheckingSession(false);
+        return;
+      }
+
+      if (event === "SIGNED_OUT") {
+        recoveryMode.current = false;
+      }
+
+      void syncSession(!!session);
+    });
+
     // On first load, jump straight to the right portal if there's already
     // a signed-in session (e.g. the user refreshed the page).
     supabase.auth.getSession().then(async ({ data: { session } }) => {
-      await syncSession(!!session);
-      setCheckingSession(false);
-    });
+      const recoveryLink =
+        typeof window !== "undefined" && window.location.hash.includes("type=recovery");
 
-    // Keep view/role in sync with auth state after that: sign-in anywhere
-    // sends you to the right portal, sign-out sends you home.
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      syncSession(!!session);
+      if (recoveryMode.current || recoveryLink) {
+        recoveryMode.current = true;
+        setRole(null);
+        setView("reset-password");
+      } else {
+        await syncSession(!!session);
+      }
+      setCheckingSession(false);
     });
 
     return () => listener.subscription.unsubscribe();
@@ -64,6 +93,8 @@ function App() {
       return <SignIn goTo={goTo} />;
     case "signup":
       return <SignUp goTo={goTo} />;
+    case "reset-password":
+      return <ResetPassword goTo={goTo} />;
     case "portal":
       if (role === "nas") return <NasPortal />;
       if (role === "it") return <ITPortal />;

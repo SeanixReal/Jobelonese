@@ -60,7 +60,6 @@ export async function signUp(
   email: string,
   password: string,
   fullName: string,
-  role: string,
   studentOrStaffId?: string,
   program?: string
 ) {
@@ -71,7 +70,6 @@ export async function signUp(
       options: {
         data: {
           full_name: fullName,
-          role,
           student_or_staff_id: studentOrStaffId ?? null,
           program: program ?? null,
         },
@@ -86,7 +84,7 @@ export async function signUp(
       authData.user.id,
       email,
       fullName,
-      role,
+      'student',
       studentOrStaffId,
       program
     );
@@ -120,7 +118,7 @@ export async function signIn(email: string, password: string) {
         data.user.id,
         data.user.email ?? email,
         (data.user.user_metadata?.full_name as string | undefined) ?? '',
-        (data.user.user_metadata?.role as string | undefined) ?? 'student',
+        'student',
         (data.user.user_metadata?.student_or_staff_id as string | undefined) ?? null,
         (data.user.user_metadata?.program as string | undefined) ?? null
       );
@@ -170,9 +168,16 @@ export async function getUserProfile(userId: string): Promise<UserData | null> {
 // UPDATE - Update user profile
 export async function updateUserProfile(userId: string, updates: Partial<UserData>) {
   try {
+    const safeUpdates: Partial<UserData> = {};
+    if (updates.fullname !== undefined) safeUpdates.fullname = updates.fullname;
+    if (updates.student_or_staff_id !== undefined) {
+      safeUpdates.student_or_staff_id = updates.student_or_staff_id;
+    }
+    if (updates.program !== undefined) safeUpdates.program = updates.program;
+
     const { data, error } = await supabase
       .from('users')
-      .update(updates)
+      .update(safeUpdates)
       .eq('id', userId)
       .select();
 

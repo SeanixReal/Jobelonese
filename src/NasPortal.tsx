@@ -11,6 +11,7 @@ import {
   resolveTicket,
   forwardTicket,
   signOut,
+  subscribeToRealtimeChanges,
 } from "./lib.ts";
 import type { Lab, User, Station, TicketWithDetails } from "./lib.ts";
 import "./StudentPortal.css";
@@ -110,14 +111,50 @@ export default function NasPortal() {
   }, []);
 
   useEffect(() => {
+    let active = true;
+    const unsubscribe = subscribeToRealtimeChanges(
+      [{ table: "tickets" }, { table: "labs" }, { table: "stations" }],
+      () => {
+        void Promise.all([getNasQueue(), getLabs()])
+          .then(([queueData, labData]) => {
+            if (!active) return;
+            setQueue(queueData);
+            setLabs(labData);
+          })
+          .catch((err) => {
+            if (active) console.error("Failed to refresh the NAS queue from Realtime.", err);
+          });
+      }
+    );
+
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    setStations([]);
+    setStationId("");
+
     if (!labId) {
-      setStations([]);
-      setStationId("");
-      return;
+      return () => {
+        active = false;
+      };
     }
+
     getStations(labId)
-      .then(setStations)
-      .catch((err) => setFormError(err.message));
+      .then((nextStations) => {
+        if (active) setStations(nextStations);
+      })
+      .catch((err) => {
+        if (active) setFormError(err.message);
+      });
+
+    return () => {
+      active = false;
+    };
   }, [labId]);
 
   const received = useMemo(() => queue.filter((t) => t.status === "open"), [queue]);
@@ -129,11 +166,13 @@ export default function NasPortal() {
 
   // Keep the inspected ticket in sync whenever the queue refreshes
   // (e.g. after claiming it, its status changes from under it).
+  const inspectedTicketId = inspectedTicket?.id;
+
   useEffect(() => {
-    if (!inspectedTicket) return;
-    const updated = queue.find((t) => t.id === inspectedTicket.id);
+    if (!inspectedTicketId) return;
+    const updated = queue.find((t) => t.id === inspectedTicketId);
     setInspectedTicket(updated ?? null);
-  }, [queue]);
+  }, [queue, inspectedTicketId]);
 
   const handleClaim = async (ticketId: string) => {
     setActionError(null);

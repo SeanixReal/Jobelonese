@@ -10,21 +10,23 @@ incomplete.
 sequenceDiagram
     actor U as User
     participant F as signup.tsx
-    participant A as authService.ts
+    participant A as src/lib.ts
     participant S as Supabase Auth
     participant DB as public.users
 
-    U->>F: fill form (name, email, id, role, program, password)
-    F->>F: validate (min length, match, role, program)
-    F->>A: signUp(email, password, fullName, role, id, program)
+    U->>F: fill form (name, CIT email, student ID, program, password)
+    F->>F: validate (domain, min length, match, program)
+    F->>A: signUp(email, password, fullName, student ID, program)
     A->>S: auth.signUp({ email, password, options.data })
-    S-->>A: auth user (metadata stored)
-    Note over S,DB: ⚠️ No trigger copies metadata into public.users (#6)
-    A-->>F: { success, user, profile(fallback) }
-    F->>U: navigate to signin
-
-    rect rgb(255,240,240)
-    Note over U,S: ⚠️ If email confirmation is ON, the user cannot sign in yet<br/>and nothing tells them to check their inbox (#20)
+    S-->>A: auth user (metadata stored; session may be null)
+    Note over S,DB: Server-side domain trigger rejects non-@cit.edu users
+    DB->>DB: profile trigger inserts public.users with role = student
+    alt email confirmation enabled
+        A-->>F: user, no session
+        F->>U: show verification message
+    else email confirmation disabled
+        A-->>F: user and session
+        F->>U: navigate to portal
     end
 ```
 
@@ -34,7 +36,7 @@ sequenceDiagram
 sequenceDiagram
     actor U as User
     participant F as signin.tsx
-    participant A as authService.ts
+    participant A as src/lib.ts
     participant S as Supabase Auth
     participant DB as public.users
     participant APP as App.tsx
@@ -44,13 +46,9 @@ sequenceDiagram
     A->>S: auth.signInWithPassword
     S-->>A: session + user
     A->>DB: select * from users where id = user.id (maybeSingle)
-    alt profile row exists
-        DB-->>A: profile
-    else missing / RLS-hidden
-        A->>A: buildFallbackProfile(from metadata)
-    end
-    A-->>F: { success, user, profile }
-    F->>APP: goTo(role == student ? portal : home)
+    DB-->>APP: server-owned profile
+    A-->>F: user + session
+    F->>APP: goTo(portal)
     APP->>APP: onAuthStateChange -> load profile
     alt role = student or cpe_faculty
         APP->>U: render StudentPortal
@@ -82,6 +80,35 @@ sequenceDiagram
     Note over APP,S: cb sets view = session ? "portal" : "home"<br/>for every future auth change
 ```
 
+## Password recovery
+
+```mermaid
+sequenceDiagram
+    actor U as User
+    participant F as signin.tsx
+    participant A as src/lib.ts
+    participant S as Supabase Auth
+    participant APP as App.tsx
+    participant R as resetpassword.tsx
+
+    U->>F: click Forgot password?
+    F->>A: requestPasswordReset(CIT email)
+    A->>S: auth.resetPasswordForEmail(email, redirectTo)
+    S-->>U: recovery email with reset link
+    U->>S: open reset link
+    S-->>APP: PASSWORD_RECOVERY session event
+    APP->>R: render reset-password view
+    U->>R: enter and confirm new password
+    R->>A: updatePassword(password)
+    A->>S: auth.updateUser({ password })
+    S-->>APP: USER_UPDATED
+    Note over APP,R: Keep the recovery session on the reset screen
+    U->>R: continue to sign in
+    R->>A: signOut()
+    A->>S: auth.signOut()
+    S-->>APP: SIGNED_OUT -> sign-in
+```
+
 ## Report a ticket (student)
 
 ```mermaid
@@ -103,7 +130,7 @@ sequenceDiagram
     L->>DB: insert into tickets (user_id = auth.uid())
     DB-->>L: new ticket
     P->>L: loadAll() (refresh)
-    Note over P,DB: ⚠️ getMyTickets has no user_id filter in application code.<br/>It must be protected by a correct RLS owner policy.
+    Note over P,DB: getMyTickets filters by the current user_id and must remain protected by the RLS owner policy.
 ```
 
 ## Ticket lifecycle (state machine)

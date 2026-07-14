@@ -7,6 +7,7 @@ import {
   getAllTicketHistory,
   getAllTickets,
   signOut,
+  subscribeToRealtimeChanges,
 } from "./lib.ts";
 import type { Profile, Role, TicketWithDetails } from "./lib.ts";
 import "./StudentPortal.css";
@@ -14,9 +15,6 @@ import "./ITPortal.css"; // Reuse card layouts, spacing, table designs
 import "./AdminPortal.css";
 
 type AdminPortalView = "dashboard" | "users" | "logs" | "settings" | "profile";
-const NAS_ROLE_PASSCODE_DISPLAY = import.meta.env.VITE_NAS_ROLE_PASSCODE || "Not configured";
-const IT_ROLE_PASSCODE_DISPLAY = import.meta.env.VITE_IT_ROLE_PASSCODE || "Not configured";
-const ADMIN_ROLE_PASSCODE_DISPLAY = import.meta.env.VITE_ADMIN_ROLE_PASSCODE || "Not configured";
 
 export default function AdminPortal() {
   const [currentView, setCurrentView] = useState<AdminPortalView>("dashboard");
@@ -101,7 +99,17 @@ export default function AdminPortal() {
       refreshDataSilently();
     }, 15000);
 
-    return () => clearInterval(interval);
+    const unsubscribe = subscribeToRealtimeChanges(
+      [{ table: "users" }, { table: "tickets" }, { table: "ticket_history" }],
+      () => {
+        void refreshDataSilently();
+      }
+    );
+
+    return () => {
+      clearInterval(interval);
+      unsubscribe();
+    };
   }, [loadProfile, loadAllData, refreshDataSilently]);
 
   const handleSignOut = async () => {
@@ -197,7 +205,7 @@ export default function AdminPortal() {
   const filteredUsers = useMemo(() => {
     return usersList.filter((u) => {
       if (roleFilter !== "all") {
-        if (roleFilter === "faculty") {
+        if (roleFilter === "cpe_faculty") {
           if (u.role !== "cpe_faculty" && (u.role as string) !== "cpe-faculty") return false;
         } else if (u.role !== roleFilter) {
           return false;
@@ -554,7 +562,7 @@ export default function AdminPortal() {
                         <option value="student">Student</option>
                         <option value="nas">NAS Staff</option>
                         <option value="it">IT Specialist</option>
-                        <option value="faculty">Faculty Member</option>
+                        <option value="cpe_faculty">CPE Faculty</option>
                         <option value="admin">Administrator</option>
                       </select>
                     </div>
@@ -646,7 +654,8 @@ export default function AdminPortal() {
                             >
                               <option value="student">Student</option>
                               <option value="nas">NAS (Scholar)</option>
-                              <option value="it">IT Administrator</option>                           
+                              <option value="it">IT Administrator</option>
+                              <option value="cpe_faculty">CPE Faculty</option>
                               <option value="admin">System Admin</option>
                             </select>
                           </div>
@@ -744,35 +753,35 @@ export default function AdminPortal() {
             <div className="topbar">
               <div>
                 <span className="page-eyebrow">SECURITY CONTROLS</span>
-                <h1 className="page-title">Registration Passcodes</h1>
-                <p className="page-sub">Passcodes needed to sign up for privileged roles on TechFix.</p>
+                <h1 className="page-title">Role Assignment Policy</h1>
+                <p className="page-sub">New accounts start as students; administrators grant elevated access.</p>
               </div>
             </div>
 
             <div className="card-glass">
-              <h4>Active Passcodes Config</h4>
-              <p className="text-muted margin-bottom-20">These codes must be entered during account registration to assign roles:</p>
+              <h4>Administrator-managed roles</h4>
+              <p className="text-muted margin-bottom-20">Role changes are available from User Management and are enforced by the database.</p>
 
-              <div className="passcodes-info-grid">
-                <div className="passcode-card card-glass text-center">
-                  <h5>NAS Scholar Role</h5>
-                  <div className="passcode-display font-mono">{NAS_ROLE_PASSCODE_DISPLAY}</div>
+              <div className="role-policy-grid">
+                <div className="role-policy-card card-glass text-center">
+                  <h5>Student</h5>
+                  <p>Assigned automatically during signup.</p>
                 </div>
 
-                <div className="passcode-card card-glass text-center">
-                  <h5>IT Specialist Role</h5>
-                  <div className="passcode-display font-mono">{IT_ROLE_PASSCODE_DISPLAY}</div>
+                <div className="role-policy-card card-glass text-center">
+                  <h5>NAS / IT / CPE Faculty</h5>
+                  <p>Assigned by an administrator after account review.</p>
                 </div>
 
-                <div className="passcode-card card-glass text-center">
-                  <h5>System Admin Role</h5>
-                  <div className="passcode-display font-mono">{ADMIN_ROLE_PASSCODE_DISPLAY}</div>
+                <div className="role-policy-card card-glass text-center">
+                  <h5>System Admin</h5>
+                  <p>Restricted to administrator-controlled role changes.</p>
                 </div>
               </div>
 
               <div className="info-box-general margin-top-20">
-                <h5>💡 Note on signup security</h5>
-                <p>Students and CPE Faculty do not require a passcode to sign up. Only administrative, technician, and student assistant roles require validation.</p>
+                <h5>Role security</h5>
+                <p>Signup does not accept a role or passcode. Direct profile updates are rejected unless the authenticated actor is an administrator.</p>
               </div>
             </div>
           </div>
