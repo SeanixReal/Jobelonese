@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   getStations,
   addStation,
   deleteStation,
   bulkAddStations,
+  normalizeStationNumber,
 } from "./lib.ts";
 import type { Lab, Station, TicketWithDetails } from "./lib.ts";
 
@@ -59,6 +60,7 @@ export default function LabMap({
   const [newStationNumber, setNewStationNumber] = useState("");
   const [bulkStart, setBulkStart] = useState("");
   const [bulkEnd, setBulkEnd] = useState("");
+  const stationLoadRequest = useRef(0);
 
   useEffect(() => {
     loadAllStations();
@@ -80,7 +82,12 @@ export default function LabMap({
   }, [selectedLabId]);
 
   const loadAllStations = async () => {
-    if (labs.length === 0) return;
+    const requestId = ++stationLoadRequest.current;
+    if (labs.length === 0) {
+      setStationsByLab({});
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setActionError("");
     try {
@@ -90,6 +97,7 @@ export default function LabMap({
           return [lab.id, data] as const;
         })
       );
+      if (requestId !== stationLoadRequest.current) return;
       const next: Record<number, Station[]> = {};
       results.forEach(([labId, data]) => {
         next[labId] = data;
@@ -97,9 +105,9 @@ export default function LabMap({
       setStationsByLab(next);
     } catch (err: any) {
       console.error(err);
-      setActionError("Failed to load stations.");
+      if (requestId === stationLoadRequest.current) setActionError("Failed to load stations.");
     } finally {
-      setLoading(false);
+      if (requestId === stationLoadRequest.current) setLoading(false);
     }
   };
 
@@ -117,9 +125,9 @@ export default function LabMap({
     if (!adminLabId || !newStationNumber.trim()) return;
     setActionError("");
     try {
-      const num = newStationNumber.trim();
+      const num = normalizeStationNumber(newStationNumber);
       const existing = stationsByLab[adminLabId] ?? [];
-      if (existing.some((s) => s.station_number.toLowerCase() === num.toLowerCase())) {
+      if (existing.some((s) => normalizeStationNumber(s.station_number).toLowerCase() === num.toLowerCase())) {
         setActionError(`Station ${num} already exists in this lab.`);
         return;
       }
@@ -148,11 +156,14 @@ export default function LabMap({
         return;
       }
       const existing = stationsByLab[adminLabId] ?? [];
+      const existingKeys = new Set(
+        existing.map((station) => normalizeStationNumber(station.station_number).toLowerCase())
+      );
       const toAdd: string[] = [];
       for (let i = startNum; i <= endNum; i++) {
         const length = Math.max(bulkStart.trim().length, bulkEnd.trim().length);
         const strNum = String(i).padStart(length, "0");
-        if (!existing.some((s) => s.station_number === strNum)) {
+        if (!existingKeys.has(strNum.toLowerCase())) {
           toAdd.push(strNum);
         }
       }

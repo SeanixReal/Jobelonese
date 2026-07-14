@@ -2,7 +2,7 @@
 
 TechFix is a single-page React app talking directly to Supabase (Postgres + Auth) from the browser.
 There is no custom backend server — the browser is the client, and Supabase enforces access rules
-via Row-Level Security (RLS).
+via Row-Level Security (RLS), Auth configuration, and database-side signup controls.
 
 ## System overview
 
@@ -25,19 +25,18 @@ flowchart LR
     end
 
     LIB -- "session + data access" --> AUTH
-    AUTH_SVC -- "signUp / signIn" --> AUTH
     LIB -- "select / insert / update (REST)" --> DB
 ```
 
 The anon key ships in the client bundle (this is expected for Supabase). **All real protection must
-come from RLS**, so any table the client touches needs policies. See
+come from RLS and server-side Auth controls**, so any table the client touches needs policies. See
 [DATA_MODEL.md](DATA_MODEL.md) for the intended policies and the gaps.
 
 ## Use case diagram
 
 The following use-case view reflects the current portal routing in `src/App.tsx`. CPE faculty is
-supported by the role type and uses the student portal, although the current sign-up form does not
-offer it as a selectable role.
+supported by the role type and uses the student portal. The sign-up form does not offer any role;
+new accounts start as students and administrators assign staff roles.
 
 The diagram uses Mermaid flowchart notation for UML-style actors and use-case ellipses because
 Mermaid does not provide a native `usecaseDiagram` block.
@@ -149,22 +148,19 @@ flowchart TD
     SignIn --> TicketCard
     SignUp --> TicketCard
 
-    SignIn --> AuthSvc["authService.ts ⚠️ legacy"]
-    SignUp --> AuthSvc
+    SignIn --> Lib["lib.ts ✅ canonical"]
+    SignUp --> Lib
     App --> Lib["lib.ts ✅ canonical"]
     StudentPortal --> Lib
     NasPortal --> Lib
     ITPortal --> Lib
     AdminPortal --> Lib
 
-    AuthSvc --> CreateClient["CreateClient.ts ⚠️ 2nd client"]
     Lib --> SupaClient["supabase client"]
-    CreateClient --> SupaClient2["supabase client (duplicate)"]
 ```
 
-> ⚠️ Two Supabase clients and two auth layers currently coexist. `signin`/`signup` use the legacy
-> `authService.ts` + `CreateClient.ts`, while `App` and the portals use `lib.ts`. This should be consolidated
-> to a single client — [#14](https://github.com/SeanixReal/Jobelonese/issues/14).
+> `authService.ts` and `CreateClient.ts` remain as legacy compatibility files, but the auth forms now
+> use the same `lib.ts` client as `App` and the portals. Do not add new call sites to the legacy pair.
 
 ## Routing & session bootstrap
 
@@ -179,7 +175,8 @@ stateDiagram-v2
 
     home --> signin: click "Sign in"
     home --> signup: click "Get started"
-    signup --> signin: account created
+    signup --> signup: account created; show verification message
+    signup --> portal: account created without confirmation
     signin --> portal: onAuthStateChange(session)
     portal --> StudentPortal: role = student or cpe_faculty
     portal --> NasPortal: role = nas
@@ -194,8 +191,9 @@ stateDiagram-v2
 
 ## Data access layer (`src/lib.ts`)
 
-Most Supabase reads/writes are centralized here. The sign-in and sign-up forms still use the legacy
-`authService.ts` layer, while the portals and session bootstrap use `lib.ts`.
+Most Supabase reads/writes are centralized here, including sign-in and sign-up. The portals and
+session bootstrap use the same client, so session events and Realtime subscriptions share one
+Supabase connection.
 
 | Group | Functions |
 | --- | --- |

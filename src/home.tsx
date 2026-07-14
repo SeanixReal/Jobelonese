@@ -1,6 +1,6 @@
 import TicketCard, { type Ticket } from "./ticketcard";
 
-export type View = "home" | "signin" | "signup" | "portal";
+export type View = "home" | "signin" | "signup" | "reset-password" | "portal";
 
 interface HomeProps {
   goTo: (view: View) => void;

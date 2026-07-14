@@ -95,8 +95,9 @@ Profile mirror of `auth.users`, keyed by the same `id`.
 The live table also exposes legacy `createdat` and `updatedat` columns from the original setup SQL;
 the application does not use them. There is no live `updated_at` column according to the schema probe.
 
-The repository does not define the `auth.users` profile-insert trigger. Without a working trigger or
-an equivalent server-side insert, a new Auth user can exist without a matching `public.users` row.
+`SUPABASE_REALTIME_AUTH_MIGRATION.sql` defines the `auth.users` profile-insert trigger. Without that
+trigger or an equivalent server-side insert, a new Auth user can exist without a matching
+`public.users` row.
 
 ### `labs`
 
@@ -168,11 +169,32 @@ server-side role controls.
 | `labs`, `stations` | Authenticated users may read reference data; management writes are limited to IT/admin. |
 | `ticket_history` | Staff/admin may read appropriate history; inserts must be authenticated and tied to the acting user. |
 
-The current client code still needs review against these policies: `getMyTickets()` does not add an
-explicit `user_id` filter, and role selection/passcodes are handled in the browser. The live schema
-probe confirmed table/column availability but did not expose policy definitions through the available
-connector permissions.
+The current client code now adds the explicit `user_id` filter for `getMyTickets()`. Signup no longer
+accepts a role, and the migration's profile trigger assigns `student`; the private role-assignment
+trigger is the database authorization boundary for later changes. The live schema probe confirmed
+table/column availability but did not expose policy definitions through the available connector
+permissions.
 
+## Realtime and signup enforcement
+
+The client subscribes to Postgres Changes for `tickets` so student, NAS, IT, and admin views update
+after a ticket is created or changed without a manual reload. The IT and admin views also subscribe to
+the related `users`, `labs`, `stations`, and `ticket_history` tables used by their dashboards.
+
+Realtime still evaluates the subscriber's RLS policies; adding a table to the
+`supabase_realtime` publication does not grant access to rows. Run
+`SUPABASE_REALTIME_AUTH_MIGRATION.sql` in the intended Supabase project to add the tables to that
+publication.
+
+New Auth users are restricted to the exact `@cit.edu` domain by the same migration's database
+trigger. It also defines `public.hook_restrict_signup_by_email_domain` for the Supabase Before User
+Created hook. The client-side check in `src/lib.ts` is only an early validation and is not the
+security boundary.
+
+Station numbers are canonicalized by trimming and collapsing whitespace. The migration moves ticket
+references off duplicate station rows before deleting duplicates, then enforces uniqueness per lab
+with `lower(btrim(station_number))`. Duplicate station inserts are rejected by both the client and
+the database constraint.
 ## Enumerations used by the code
 
 | Type | Values |
@@ -182,5 +204,5 @@ connector permissions.
 | `TicketPriority` | `normal`, `high` |
 | `HandlerRole` | `nas`, `it` |
 
-The sign-up form currently offers `student`, `nas`, `it`, and `admin`; `cpe_faculty` is supported by
-the shared type and portal routing but is not currently offered in that form.
+The sign-up form does not offer a role. New users start as `student`; administrators can assign
+`nas`, `it`, `cpe_faculty`, or `admin` from the Admin portal after the database role guard is installed.

@@ -8,6 +8,7 @@ import {
   getLabs,
   getStations,
   signOut,
+  subscribeToRealtimeChanges,
 } from "./lib.ts";
 import type { Lab, User, Station, TicketStatus, TicketWithDetails } from "./lib.ts";
 import "./StudentPortal.css";
@@ -104,14 +105,50 @@ export default function StudentPortal() {
   }, []);
 
   useEffect(() => {
+    if (!user?.id) return;
+
+    let active = true;
+    const unsubscribe = subscribeToRealtimeChanges(
+      [{ table: "tickets", filter: `user_id=eq.${user.id}` }],
+      () => {
+        void getMyTickets()
+          .then((nextTickets) => {
+            if (active) setTickets(nextTickets);
+          })
+          .catch((err) => {
+            if (active) setError(err instanceof Error ? err.message : "Failed to refresh your tickets.");
+          });
+      }
+    );
+
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [user?.id]);
+
+  useEffect(() => {
+    let active = true;
+    setStations([]);
+    setStationId("");
+
     if (!labId) {
-      setStations([]);
-      setStationId("");
-      return;
+      return () => {
+        active = false;
+      };
     }
+
     getStations(labId)
-      .then(setStations)
-      .catch((err) => setFormError(err.message));
+      .then((nextStations) => {
+        if (active) setStations(nextStations);
+      })
+      .catch((err) => {
+        if (active) setFormError(err.message);
+      });
+
+    return () => {
+      active = false;
+    };
   }, [labId]);
 
   const stats = useMemo(

@@ -92,10 +92,12 @@ DATABASE_SETUP.sql   # Supabase schema (currently incomplete)
 
 ## Known gaps
 
-The app is under active QA. The highest-impact open issues:
+The app is under active QA. This PR addresses the client-side portions of several issues and adds a
+reviewable Supabase migration for the database portions. The migration has not been applied to a live
+project from this workspace.
 
-- **Critical:** schema mismatch & missing tables ([#4](https://github.com/SeanixReal/Jobelonese/issues/4), [#5](https://github.com/SeanixReal/Jobelonese/issues/5)), no profile-insert trigger ([#6](https://github.com/SeanixReal/Jobelonese/issues/6)), role value inconsistency ([#8](https://github.com/SeanixReal/Jobelonese/issues/8))
-- **High:** ticket data leak ([#9](https://github.com/SeanixReal/Jobelonese/issues/9)), self-selected roles ([#10](https://github.com/SeanixReal/Jobelonese/issues/10)), duplicate clients ([#14](https://github.com/SeanixReal/Jobelonese/issues/14)), and incomplete live RLS verification for staff/admin actions
+- **Still needs live-project verification:** schema mismatch & missing tables ([#4](https://github.com/SeanixReal/Jobelonese/issues/4), [#5](https://github.com/SeanixReal/Jobelonese/issues/5)), role value migration ([#8](https://github.com/SeanixReal/Jobelonese/issues/8)), and staff/admin RLS policy coverage.
+- **Covered by this PR:** user-scoped ticket reads ([#9](https://github.com/SeanixReal/Jobelonese/issues/9)), canonical auth client ([#14](https://github.com/SeanixReal/Jobelonese/issues/14)), profile creation ([#6](https://github.com/SeanixReal/Jobelonese/issues/6)), admin-only roles ([#10](https://github.com/SeanixReal/Jobelonese/issues/10), [#11](https://github.com/SeanixReal/Jobelonese/issues/11)), station uniqueness ([#40](https://github.com/SeanixReal/Jobelonese/issues/40)), and stale lab selection ([#43](https://github.com/SeanixReal/Jobelonese/issues/43)).
 
 See the full list in [Issues](https://github.com/SeanixReal/Jobelonese/issues).
 

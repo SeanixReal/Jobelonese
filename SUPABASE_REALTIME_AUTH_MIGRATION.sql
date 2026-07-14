@@ -1,47 +1,8 @@
--- Create users table for storing user profile information
-CREATE TABLE public.users (
-  id UUID REFERENCES auth.users(id) ON DELETE CASCADE PRIMARY KEY,
-  email VARCHAR(255) NOT NULL UNIQUE,
-  fullname VARCHAR(255) NOT NULL,
-  role VARCHAR(50) NOT NULL DEFAULT 'student'
-    CHECK (role IN ('student', 'nas', 'it', 'cpe_faculty', 'admin')),
-  student_or_staff_id VARCHAR(255),
-  program VARCHAR(255),
-  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
-);
+-- TechFix production hardening for issues #46 and #13.
+-- Run this once in the intended Supabase project's SQL Editor after the
+-- application tables exist. The statements are safe to run again.
 
--- Create RLS (Row Level Security) policies for users table
-ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
-
--- Allow users to view their own profile
-CREATE POLICY "Users can view their own profile"
-  ON public.users FOR SELECT
-  USING (auth.uid() = id);
-
--- Allow users to update their own profile
-CREATE POLICY "Users can update their own profile"
-  ON public.users FOR UPDATE
-  USING (auth.uid() = id);
-
--- Allow new users to insert their profile during signup
-CREATE POLICY "Users can insert their own profile"
-  ON public.users FOR INSERT
-  WITH CHECK (auth.uid() = id);
-
--- Create indexes for faster queries
-CREATE INDEX idx_users_email ON public.users(email);
-CREATE INDEX idx_users_role ON public.users(role);
-
--- =========================================================
--- Production hardening for TechFix issues #46 and #13
---
--- Run this section after the application tables (labs, stations, tickets,
--- and ticket_history) have been created. The standalone
--- SUPABASE_REALTIME_AUTH_MIGRATION.sql contains the same idempotent section
--- for an already-provisioned database.
--- =========================================================
-
--- Publish the tables consumed by the client Realtime subscriptions.
+-- Issue #46: publish the tables consumed by the client Realtime subscriptions.
 DO $$
 DECLARE
   table_name text;
@@ -77,7 +38,7 @@ BEGIN
 END;
 $$;
 
--- Reject non-CIT-U accounts in the Auth database transaction itself.
+-- Issue #13: reject non-CIT-U accounts in the database transaction itself.
 CREATE OR REPLACE FUNCTION public.enforce_cit_email_domain()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -103,8 +64,9 @@ CREATE TRIGGER techfix_enforce_cit_email_domain
   FOR EACH ROW
   EXECUTE FUNCTION public.enforce_cit_email_domain();
 
--- Optional official Before User Created hook function. Select this function
--- in Auth > Hooks after running the SQL to return a clear Auth API error.
+-- This function can also be selected in Auth > Hooks > Before User Created.
+-- The trigger above keeps the rule active even before that dashboard hook is
+-- configured, while the hook provides a clearer Auth API error response.
 CREATE OR REPLACE FUNCTION public.hook_restrict_signup_by_email_domain(event jsonb)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -179,6 +141,10 @@ CREATE TRIGGER on_auth_user_created
 
 -- =========================================================
 -- Issue #10 / #11: server-side role ownership
+--
+-- New Auth users are always created as students. Role changes are guarded by
+-- a database trigger so a browser cannot promote itself by editing metadata
+-- or its public profile row. Run this section in the intended project only.
 -- =========================================================
 
 CREATE SCHEMA IF NOT EXISTS private;
@@ -251,6 +217,9 @@ CREATE TRIGGER users_role_update_guard
   FOR EACH ROW
   EXECUTE FUNCTION private.enforce_user_role_assignment();
 
+-- Preserve the existing self-service profile policy while allowing an
+-- authenticated administrator to update another user's role. The trigger
+-- above remains the final authorization boundary for the role column.
 DROP POLICY IF EXISTS "Admins can update user profiles" ON public.users;
 CREATE POLICY "Admins can update user profiles"
   ON public.users
@@ -268,6 +237,10 @@ CREATE POLICY "Admins can view all user profiles"
 
 -- =========================================================
 -- Issue #40: canonical station numbers and database uniqueness
+--
+-- Keep the lowest station id in each lab, move any ticket references to that
+-- row, remove duplicate rows, and then make the invariant permanent. The
+-- key is case-insensitive and ignores surrounding whitespace.
 -- =========================================================
 
 UPDATE public.labs

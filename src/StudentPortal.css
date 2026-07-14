@@ -85,7 +85,12 @@ ul{margin:0;padding:0;list-style:none;}
 .mini-profile-role{font-family:var(--font-mono);font-size:10.5px;color:var(--text-muted);}
 
 /* ---------- MAIN ---------- */
-.main{padding:32px clamp(20px,4vw,48px) 60px;max-width:1180px;}
+.main{
+  width:100%;
+  max-width:1600px;
+  margin:0 auto;
+  padding:32px clamp(20px,4vw,48px) 60px;
+}
 .topbar{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:32px;flex-wrap:wrap;gap:16px;}
 .page-eyebrow{
   font-family:var(--font-mono);font-size:11.5px;letter-spacing:1.4px;text-transform:uppercase;

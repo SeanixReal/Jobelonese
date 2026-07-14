@@ -2,32 +2,11 @@ import { useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import TicketCard, { type Ticket } from "./ticketcard";
 import type { View } from "./home";
-import { signUp } from "./authService";
+import { CIT_EMAIL_DOMAIN, isCitEmail, signUp } from "./lib";
 
 interface SignUpProps {
   goTo: (view: View) => void;
 }
-
-export type Role = "student" | "nas" | "it" | "admin";
-
-const ROLE_LABELS: Record<Role, string> = {
-  student: "Student",
-  nas: "NAS (Non-Academic Scholar)",
-  it: "IT Administrator",
-  admin: "System Administrator",
-};
-
-const ROLE_OPTIONS = Object.keys(ROLE_LABELS) as Role[];
-const PRIVILEGED_ROLE_PASSCODES = {
-  nas: import.meta.env.VITE_NAS_ROLE_PASSCODE,
-  it: import.meta.env.VITE_IT_ROLE_PASSCODE,
-  admin: import.meta.env.VITE_ADMIN_ROLE_PASSCODE,
-} as const;
-const PRIVILEGED_ROLE_ERROR_LABELS = {
-  nas: "NAS Scholar",
-  it: "IT Administrator",
-  admin: "System Administrator",
-} as const;
 
 // Standard academic programs at CIT-U
 const PROGRAM_OPTIONS = ["BSIT", "BSCS", "BSCpE", "BSEMC", "BSIS", "BSISc", "BSECE", "BSEE", "BSME", "BSCE", "BSApE"];
@@ -36,10 +15,9 @@ interface SignUpFormData {
   fullName: string;
   email: string;
   studentOrStaffId: string;
-  program: string; // program (students) or department (staff/faculty)
+  program: string;
   password: string;
   confirmPassword: string;
-  role: Role | "";
 }
 
 const sideTicket: Ticket = {
@@ -57,29 +35,26 @@ export default function SignUp({ goTo }: SignUpProps) {
     program: "",
     password: "",
     confirmPassword: "",
-    role: "",
   });
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [passcode, setPasscode] = useState("");
-
   const handleInputChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setForm((prev) => ({ ...prev, [name]: value }));
     setError(null);
-  };
-
-  const handleRoleChange = (e: ChangeEvent<HTMLSelectElement>) => {
-    const value = e.target.value as Role | "";
-    // Program is a fixed list for students; for every other role it's a free-text
-    // department, so clear it on role switch since the two aren't interchangeable.
-    setForm((prev) => ({ ...prev, role: value, program: "" }));
-    setError(null);
+    setSuccess(null);
   };
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError(null);
+    setSuccess(null);
+
+    if (!isCitEmail(form.email)) {
+      setError(`Use a CIT-U email ending in @${CIT_EMAIL_DOMAIN}.`);
+      return;
+    }
 
     if (form.password.length < 6) {
       setError("Password must be at least 6 characters.");
@@ -89,49 +64,32 @@ export default function SignUp({ goTo }: SignUpProps) {
       setError("Passwords don't match. Re-enter them.");
       return;
     }
-    if (form.role === "") {
-      setError("Select a role to continue.");
-      return;
-    }
-
-    // Validate registration passcodes for privileged roles
-    if (form.role === "nas" || form.role === "it" || form.role === "admin") {
-      const requiredPasscode = PRIVILEGED_ROLE_PASSCODES[form.role];
-      if (!requiredPasscode) {
-        setError("Registration passcode for this role is not configured. Please contact an administrator.");
-        return;
-      }
-      if (passcode !== requiredPasscode) {
-        setError(`Invalid registration passcode for ${PRIVILEGED_ROLE_ERROR_LABELS[form.role]}.`);
-        return;
-      }
-    }
-    if (form.role === "student" && !form.program) {
+    if (!form.program) {
       setError("Please select your academic program.");
-      return;
-    }
-    if (form.role !== "student" && !form.program) {
-      setError("Please enter your department.");
       return;
     }
 
     setLoading(true);
 
     try {
-      const result = await signUp(
-        form.email,
-        form.password,
-        form.fullName,
-        form.role,
-        form.studentOrStaffId,
-        form.program
-      );
-      console.log("Sign up successful:", result);
-      goTo("signin");
+      const result = await signUp({
+        email: form.email.trim(),
+        password: form.password,
+        fullName: form.fullName.trim(),
+        studentOrStaffId: form.studentOrStaffId.trim() || undefined,
+        program: form.program.trim() || undefined,
+      });
+
+      if (result.session) {
+        goTo("portal");
+      } else {
+        setSuccess(
+          `Account created. Check ${form.email.trim()} for the verification link before signing in.`
+        );
+      }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Sign up failed. Please try again.";
       setError(errorMessage);
-      console.error("Sign up error:", err);
     } finally {
       setLoading(false);
     }
@@ -217,76 +175,29 @@ export default function SignUp({ goTo }: SignUpProps) {
             </div>
 
             <div className="field">
-              <label htmlFor="su-role">Role</label>
-              <select id="su-role" name="role" value={form.role} onChange={handleRoleChange} required disabled={loading}>
+              <label htmlFor="su-program">Degree Program</label>
+              <select
+                id="su-program"
+                name="program"
+                value={form.program}
+                onChange={handleInputChange}
+                required
+                disabled={loading}
+              >
                 <option value="" disabled>
-                  Select your role
+                  Select your program
                 </option>
-                {ROLE_OPTIONS.map((role) => (
-                  <option key={role} value={role}>
-                    {ROLE_LABELS[role]}
+                {PROGRAM_OPTIONS.map((prog) => (
+                  <option key={prog} value={prog}>
+                    {prog}
                   </option>
                 ))}
               </select>
             </div>
 
-            {(form.role === "nas" || form.role === "it" || form.role === "admin") && (
-              <div className="field animate-fade-in">
-                <label htmlFor="su-passcode">Role Registration Passcode</label>
-                <input
-                  id="su-passcode"
-                  type="password"
-                  placeholder="Enter passcode to register for this role"
-                  value={passcode}
-                  onChange={(e) => setPasscode(e.target.value)}
-                  required
-                  disabled={loading}
-                />
-              </div>
-            )}
-
-            {/* Students pick from a fixed list of CIT-U programs */}
-            {form.role === "student" && (
-              <div className="field animate-fade-in">
-                <label htmlFor="su-program">Degree Program</label>
-                <select
-                  id="su-program"
-                  name="program"
-                  value={form.program}
-                  onChange={handleInputChange}
-                  required
-                  disabled={loading}
-                >
-                  <option value="" disabled>
-                    Select your program
-                  </option>
-                  {PROGRAM_OPTIONS.map((prog) => (
-                    <option key={prog} value={prog}>
-                      {prog}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            {/* Every other role types in their department freely — there's no
-                fixed list of NAS/IT/faculty departments the way there is for
-                student programs. */}
-            {form.role !== "" && form.role !== "student" && (
-              <div className="field animate-fade-in">
-                <label htmlFor="su-department">Department</label>
-                <input
-                  id="su-department"
-                  name="program"
-                  type="text"
-                  placeholder="e.g., Computer Engineering Department"
-                  value={form.program}
-                  onChange={handleInputChange}
-                  required
-                  disabled={loading}
-                />
-              </div>
-            )}
+            <p className="role-hint" role="note">
+              New accounts start as Student. Only an administrator can assign NAS, IT, faculty, or admin access.
+            </p>
 
             <div className="row-2">
               <div className="field">
@@ -320,6 +231,12 @@ export default function SignUp({ goTo }: SignUpProps) {
             {error && (
               <p style={{ color: "var(--danger)", fontSize: "13px", margin: "-6px 0 18px" }}>
                 {error}
+              </p>
+            )}
+
+            {success && (
+              <p style={{ color: "var(--success, #138a5b)", fontSize: "13px", margin: "-6px 0 18px" }}>
+                {success}
               </p>
             )}
 
