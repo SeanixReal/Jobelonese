@@ -95,9 +95,11 @@ Profile mirror of `auth.users`, keyed by the same `id`.
 The live table also exposes legacy `createdat` and `updatedat` columns from the original setup SQL;
 the application does not use them. There is no live `updated_at` column according to the schema probe.
 
-`SUPABASE_REALTIME_AUTH_MIGRATION.sql` defines the `auth.users` profile-insert trigger. Without that
-trigger or an equivalent server-side insert, a new Auth user can exist without a matching
-`public.users` row.
+`SUPABASE_REALTIME_AUTH_MIGRATION.sql` defines the `auth.users` profile-insert trigger and includes an
+idempotent repair for `@cit.edu` Auth users created before that trigger was installed. Without the
+trigger or an equivalent server-side insert, an Auth user can exist without a matching `public.users`
+row and the dashboard cannot load its account data. The repair is SQL-only and must be reviewed and
+run by an administrator in the intended Supabase project; the browser never inserts a profile.
 
 ### `labs`
 

@@ -36,6 +36,10 @@ ul{margin:0;padding:0;list-style:none;}
   min-height:100vh;display:flex;align-items:center;justify-content:center;
   color:var(--text-muted);font-size:14px;gap:12px;
 }
+.portal-error{padding:24px;box-sizing:border-box;text-align:center;}
+.portal-error-content{max-width:560px;display:flex;flex-direction:column;align-items:center;gap:18px;}
+.portal-error-content p{line-height:1.6;}
+.portal-error-actions{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;}
 
 /* ---------- SHELL LAYOUT ---------- */
 .shell{display:grid;grid-template-columns:250px 1fr;min-height:100vh;}

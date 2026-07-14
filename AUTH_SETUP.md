@@ -51,7 +51,9 @@ There is no `ticket_assignments` table; ticket assignment is stored in `tickets.
 See [docs/DATA_MODEL.md](docs/DATA_MODEL.md) for the live column names and relationships.
 
 `SUPABASE_REALTIME_AUTH_MIGRATION.sql` defines the `auth.users` profile-insert trigger. It copies only
-non-privileged profile fields and always creates the public row with `role = 'student'`.
+non-privileged profile fields and always creates the public row with `role = 'student'`. The same
+review-only migration repairs existing `@cit.edu` Auth accounts that do not yet have a matching
+`public.users` row. Do not create that row from the browser; run the SQL in the intended project.
 
 ## Authentication flow
 
@@ -63,6 +65,10 @@ non-privileged profile fields and always creates the public row with `role = 'st
    signing in.
 6. `App.tsx` observes the Auth session, loads the server-owned profile, and routes the session to the student,
    NAS, IT, or Admin portal.
+
+If the Auth session exists but the profile row is missing, the app shows an account-setup error instead
+of silently opening the student portal. An administrator must review and run the profile-repair section
+of `SUPABASE_REALTIME_AUTH_MIGRATION.sql`, then the user can retry.
 
 ## Password recovery
 
