@@ -26,6 +26,28 @@ export function getAuthRedirectUrl(): string | undefined {
   return typeof window === "undefined" ? undefined : `${window.location.origin}${window.location.pathname}`;
 }
 
+export type AuthRedirectState = "verification" | "error" | null;
+
+export function getAuthRedirectState(): AuthRedirectState {
+  if (typeof window === "undefined") return null;
+
+  const parameterSets = [
+    new URLSearchParams(window.location.search),
+    new URLSearchParams(window.location.hash.replace(/^#/, "")),
+  ];
+
+  if (
+    parameterSets.some(
+      (params) => params.has("error") || params.has("error_code") || params.has("error_description")
+    )
+  ) {
+    return "error";
+  }
+
+  const type = parameterSets.map((params) => params.get("type")).find(Boolean);
+  return type === "signup" ? "verification" : null;
+}
+
 export type RealtimeTable = "users" | "labs" | "stations" | "tickets" | "ticket_history";
 
 export interface RealtimeSubscription {

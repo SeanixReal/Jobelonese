@@ -1,23 +1,38 @@
 import { useEffect, useRef, useState } from "react";
+import type { Session } from "@supabase/supabase-js";
 import Home, { type View as BaseView } from "./home";
 import SignIn from "./signin";
 import SignUp from "./signup";
 import ResetPassword from "./resetpassword";
+import EmailVerification from "./EmailVerification";
 import StudentPortal from "./studentportal";
 import NasPortal from "./NasPortal";
 import ITPortal from "./ITPortal";
 import AdminPortal from "./AdminPortal";
-import { getCurrentProfile, getUserFacingErrorMessage, signOut, supabase } from "./lib.ts";
-import type { Role } from "./lib.ts";
+import {
+  getAuthRedirectState,
+  getCurrentProfile,
+  getUserFacingErrorMessage,
+  signOut,
+  supabase,
+  type AuthRedirectState,
+  type Role,
+} from "./lib.ts";
 import "./App.css";
 
-export type View = BaseView | "portal";
+export type View = BaseView | "verification-success" | "verification-error";
+
+type VerificationView = "success" | "error" | null;
 
 function App() {
   const [view, setView] = useState<View>("home");
   const [role, setRole] = useState<Role | null>(null);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [checkingSession, setCheckingSession] = useState(true);
+  const [verificationView, setVerificationView] = useState<VerificationView>(null);
+  const [verificationEmail, setVerificationEmail] = useState<string | null>(null);
+  const verificationRedirectRef = useRef<AuthRedirectState>(getAuthRedirectState());
+  const verificationHandledRef = useRef(false);
   const recoveryMode = useRef(false);
 
   const goTo = (next: View) => {
@@ -29,6 +44,8 @@ function App() {
     if (!hasSession) {
       setRole(null);
       setSessionError(null);
+      setVerificationView(null);
+      setVerificationEmail(null);
       setView("home");
       return;
     }
@@ -46,6 +63,28 @@ function App() {
     setView("portal");
   };
 
+  const showVerificationSuccess = (session: Session) => {
+    verificationHandledRef.current = true;
+    verificationRedirectRef.current = null;
+    setVerificationView("success");
+    setVerificationEmail(session.user.email ?? null);
+    setRole(null);
+    setSessionError(null);
+    setView("verification-success");
+    setCheckingSession(false);
+  };
+
+  const showVerificationError = () => {
+    verificationHandledRef.current = true;
+    verificationRedirectRef.current = null;
+    setVerificationView("error");
+    setVerificationEmail(null);
+    setRole(null);
+    setSessionError(null);
+    setView("verification-error");
+    setCheckingSession(false);
+  };
+
   const retrySession = () => {
     void syncSession(true);
   };
@@ -56,6 +95,26 @@ function App() {
     } catch (error) {
       setSessionError(getUserFacingErrorMessage(error, "Could not sign out. Please try again."));
     }
+  };
+
+  const continueFromVerification = () => {
+    void syncSession(true);
+  };
+
+  const returnToSignInFromVerification = async () => {
+    try {
+      await signOut();
+    } finally {
+      setVerificationView(null);
+      setVerificationEmail(null);
+      setView("signin");
+    }
+  };
+
+  const requestNewVerification = () => {
+    setVerificationView(null);
+    setVerificationEmail(null);
+    setView("signup");
   };
 
   useEffect(() => {
@@ -76,8 +135,28 @@ function App() {
         return;
       }
 
+      if (verificationRedirectRef.current === "error") {
+        showVerificationError();
+        return;
+      }
+
+      if (verificationRedirectRef.current === "verification") {
+        if (session) showVerificationSuccess(session);
+        else if (event === "SIGNED_IN") showVerificationError();
+        return;
+      }
+
       if (event === "SIGNED_OUT") {
         recoveryMode.current = false;
+        verificationHandledRef.current = false;
+        verificationRedirectRef.current = null;
+        void syncSession(false);
+        return;
+      }
+
+      if (verificationHandledRef.current) {
+        setCheckingSession(false);
+        return;
       }
 
       void syncSession(!!session);
@@ -89,10 +168,18 @@ function App() {
       const recoveryLink =
         typeof window !== "undefined" && window.location.hash.includes("type=recovery");
 
-      if (recoveryMode.current || recoveryLink) {
+      if (verificationHandledRef.current) {
+        // The auth listener already rendered the verification result.
+      } else if (recoveryMode.current || recoveryLink) {
         recoveryMode.current = true;
         setRole(null);
         setView("reset-password");
+      } else if (verificationRedirectRef.current === "error") {
+        showVerificationError();
+      } else if (verificationRedirectRef.current === "verification" && session) {
+        showVerificationSuccess(session);
+      } else if (verificationRedirectRef.current === "verification") {
+        showVerificationError();
       } else {
         await syncSession(!!session);
       }
@@ -121,6 +208,30 @@ function App() {
           </div>
         </div>
       </div>
+    );
+  }
+
+  if (view === "verification-success" && verificationView === "success") {
+    return (
+      <EmailVerification
+        status="success"
+        email={verificationEmail}
+        onContinue={continueFromVerification}
+        onSignIn={() => void returnToSignInFromVerification()}
+        onSignUp={requestNewVerification}
+      />
+    );
+  }
+
+  if (view === "verification-error" && verificationView === "error") {
+    return (
+      <EmailVerification
+        status="error"
+        email={null}
+        onContinue={continueFromVerification}
+        onSignIn={() => void returnToSignInFromVerification()}
+        onSignUp={requestNewVerification}
+      />
     );
   }
 
