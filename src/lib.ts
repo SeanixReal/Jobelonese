@@ -175,6 +175,23 @@ export async function signUp({
   return data;
 }
 
+export async function resendSignupConfirmation(email: string) {
+  const normalizedEmail = email.trim().toLowerCase();
+  if (!isCitEmail(normalizedEmail)) {
+    throw new Error(`Use a CIT-U email ending in @${CIT_EMAIL_DOMAIN}.`);
+  }
+
+  const { error } = await supabase.auth.resend({
+    type: "signup",
+    email: normalizedEmail,
+    options: {
+      emailRedirectTo: getAuthRedirectUrl(),
+    },
+  });
+
+  if (error) throw error;
+}
+
 export async function signIn(email: string, password: string) {
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) throw error;

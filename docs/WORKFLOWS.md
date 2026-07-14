@@ -24,6 +24,12 @@ sequenceDiagram
     alt email confirmation enabled
         A-->>F: user, no session
         F->>U: show verification message
+        opt user requests another message
+            F->>A: resendSignupConfirmation(email)
+            A->>S: auth.resend({ type: 'signup', email, options.emailRedirectTo })
+            S-->>A: email request result
+            A-->>F: show generic resend status
+        end
     else email confirmation disabled
         A-->>F: user and session
         F->>U: navigate to portal
