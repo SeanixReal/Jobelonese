@@ -195,7 +195,6 @@ Station numbers are canonicalized by trimming and collapsing whitespace. The mig
 references off duplicate station rows before deleting duplicates, then enforces uniqueness per lab
 with `lower(btrim(station_number))`. Duplicate station inserts are rejected by both the client and
 the database constraint.
-
 ## Enumerations used by the code
 
 | Type | Values |

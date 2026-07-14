@@ -36,7 +36,6 @@ The legacy `authService.ts` functions are:
 There is no `deleteUserAccount()` function in `src/authService.ts`. The Admin portal's
 `deleteUser()` function deletes a profile row from `public.users`; it does not delete the matching
 `auth.users` account.
-
 ## Database setup
 
 `DATABASE_SETUP.sql` creates only the initial `users` table and its basic policies. It does not create

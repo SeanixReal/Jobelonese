@@ -11,7 +11,9 @@ flowchart LR
     subgraph Browser["Browser (SPA)"]
         UI["React 19 + Vite<br/>Views: home / signin / signup / portal"]
         LIB["src/lib.ts<br/>Supabase client + data access"]
+        AUTH_SVC["src/authService.ts<br/>legacy auth layer"]
         UI --> LIB
+        UI --> AUTH_SVC
     end
 
     subgraph Supabase["Supabase (techfix project)"]
