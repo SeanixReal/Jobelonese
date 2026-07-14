@@ -98,13 +98,19 @@ For the intended Supabase project:
 2. In **Authentication > SMTP**, enable custom SMTP and enter the provider's host, port, username,
    password, sender email, and sender name. Keep these values in Supabase settings; never put SMTP
    credentials in `VITE_` variables or the repository.
-3. In **Authentication > URL Configuration**, add the deployed app URL and local development URL as
-   allowed redirect URLs.
-4. In **Authentication > Hooks > Before User Created**, select
+3. In **Authentication > Email Templates > Confirm signup**, keep a confirmation link that uses
+   Supabase's `{{ .ConfirmationURL }}` variable. If the template builds the URL manually, use the
+   configured redirect variable and make sure it matches the deployed app.
+4. In **Authentication > URL Configuration**, set the production Site URL and add the deployed app
+   URL and local development URL as allowed redirect URLs. For the current Vercel deployment, add
+   `https://techfix-dev.vercel.app/`.
+5. In **Authentication > Hooks > Before User Created**, select
    `public.hook_restrict_signup_by_email_domain` after running the migration.
 
 Supabase's built-in SMTP is intended for testing and only sends to pre-authorized project team
 addresses. A real CIT-U rollout needs a custom SMTP provider with a verified sender/domain.
+After a signup returns without a session, the form offers **Resend verification email**. That calls
+Supabase Auth's signup-resend endpoint and remains subject to the provider's delivery and rate limits.
 
 ## Realtime queue updates
 
