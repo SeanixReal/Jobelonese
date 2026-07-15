@@ -149,7 +149,9 @@ export interface TicketWithDetails extends Ticket {
   assigned_user?: { fullname: string; email: string } | null;
 }
 
-const TICKET_SELECT = "*, labs(name), stations(station_number), user:users!tickets_user_id_fkey(fullname, email, student_or_staff_id, program), assigned_user:users!tickets_assigned_to_fkey(fullname, email)";
+// `tickets` also has a composite lab/station relationship. Name the direct
+// station FK explicitly so PostgREST does not treat this embed as ambiguous.
+const TICKET_SELECT = "*, labs(name), stations:stations!tickets_station_id_fkey(station_number), user:users!tickets_user_id_fkey(fullname, email, student_or_staff_id, program), assigned_user:users!tickets_assigned_to_fkey(fullname, email)";
 
 // =========================================================
 // AUTH
