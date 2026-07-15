@@ -347,3 +347,292 @@ WHERE station.id = duplicate_map.id;
 CREATE UNIQUE INDEX IF NOT EXISTS stations_lab_station_number_unique
   ON public.stations (lab_id, lower(btrim(station_number)))
   WHERE station_number IS NOT NULL;
+
+-- =========================================================
+-- Ticket integrity, atomic workflow operations, and admin account deletion
+-- =========================================================
+
+-- The ticket UI is not a security boundary. These constraints protect direct
+-- Data API writes as well as form submissions.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'tickets_issue_length_check') THEN
+    ALTER TABLE public.tickets ADD CONSTRAINT tickets_issue_length_check
+      CHECK (char_length(btrim(issue)) BETWEEN 1 AND 2000);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'tickets_category_check') THEN
+    ALTER TABLE public.tickets ADD CONSTRAINT tickets_category_check
+      CHECK (category IN (
+        'Hardware (monitor, mouse, keyboard)',
+        'No internet / network',
+        'Software / application',
+        'Projector / AV equipment',
+        'Other'
+      ));
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'tickets_notes_length_check') THEN
+    ALTER TABLE public.tickets ADD CONSTRAINT tickets_notes_length_check
+      CHECK (
+        char_length(coalesce(resolution_notes, '')) <= 4000
+        AND char_length(coalesce(internal_notes, '')) <= 4000
+        AND char_length(coalesce(closed_reason, '')) <= 1000
+      );
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'stations_lab_id_id_key') THEN
+    ALTER TABLE public.stations ADD CONSTRAINT stations_lab_id_id_key UNIQUE (lab_id, id);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'tickets_station_matches_lab_fkey') THEN
+    ALTER TABLE public.tickets ADD CONSTRAINT tickets_station_matches_lab_fkey
+      FOREIGN KEY (lab_id, station_id) REFERENCES public.stations (lab_id, id);
+  END IF;
+END;
+$$;
+
+-- Direct ticket updates bypass workflow invariants. Mutations now go through
+-- the guarded RPCs below, which compare the expected state in one UPDATE.
+DROP POLICY IF EXISTS "Staff can update all tickets" ON public.tickets;
+DROP POLICY IF EXISTS "Staff can update tickets" ON public.tickets;
+DROP POLICY IF EXISTS tickets_it_update ON public.tickets;
+DROP POLICY IF EXISTS tickets_nas_update ON public.tickets;
+DROP POLICY IF EXISTS "Anyone authenticated can insert history" ON public.ticket_history;
+
+CREATE OR REPLACE FUNCTION public.claim_ticket(p_ticket_id varchar)
+RETURNS SETOF public.tickets
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_catalog
+AS $$
+DECLARE
+  actor_id uuid := auth.uid();
+  actor_role text;
+  updated_ticket public.tickets;
+BEGIN
+  SELECT role INTO actor_role FROM public.users WHERE id = actor_id;
+  IF actor_role NOT IN ('nas', 'it') THEN
+    RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'Only NAS or IT staff can claim tickets.';
+  END IF;
+
+  UPDATE public.tickets
+  SET assigned_to = actor_id, status = 'in_progress'
+  WHERE id = p_ticket_id
+    AND current_handler = actor_role
+    AND status = 'open'
+    AND assigned_to IS NULL
+  RETURNING * INTO updated_ticket;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'This ticket is no longer available to claim.';
+  END IF;
+
+  INSERT INTO public.ticket_history (ticket_id, action, performed_by, details)
+  VALUES (updated_ticket.id, 'claimed', actor_id, 'Claimed by staff');
+  RETURN NEXT updated_ticket;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.forward_ticket_to_it(p_ticket_id varchar)
+RETURNS SETOF public.tickets
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_catalog
+AS $$
+DECLARE
+  actor_id uuid := auth.uid();
+  updated_ticket public.tickets;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM public.users WHERE id = actor_id AND role = 'nas') THEN
+    RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'Only NAS staff can forward tickets.';
+  END IF;
+
+  UPDATE public.tickets
+  SET current_handler = 'it', status = 'open', assigned_to = NULL
+  WHERE id = p_ticket_id
+    AND current_handler = 'nas'
+    AND status = 'in_progress'
+    AND assigned_to = actor_id
+  RETURNING * INTO updated_ticket;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'This ticket changed before it could be forwarded.';
+  END IF;
+
+  INSERT INTO public.ticket_history (ticket_id, action, performed_by, details)
+  VALUES (updated_ticket.id, 'escalated', actor_id, 'Forwarded to IT');
+  RETURN NEXT updated_ticket;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.reassign_it_ticket(
+  p_ticket_id varchar,
+  p_assigned_to uuid,
+  p_expected_assigned_to uuid
+)
+RETURNS SETOF public.tickets
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_catalog
+AS $$
+DECLARE
+  actor_id uuid := auth.uid();
+  updated_ticket public.tickets;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM public.users WHERE id = actor_id AND role = 'it') THEN
+    RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'Only IT staff can reassign tickets.';
+  END IF;
+  IF p_assigned_to IS NOT NULL
+    AND NOT EXISTS (SELECT 1 FROM public.users WHERE id = p_assigned_to AND role = 'nas') THEN
+    RAISE EXCEPTION USING ERRCODE = '22023', MESSAGE = 'Tickets can only be reassigned to an active NAS user.';
+  END IF;
+
+  UPDATE public.tickets
+  SET assigned_to = p_assigned_to,
+      status = CASE WHEN p_assigned_to IS NULL THEN 'open' ELSE 'in_progress' END,
+      current_handler = CASE WHEN p_assigned_to IS NULL THEN 'it' ELSE 'nas' END
+  WHERE id = p_ticket_id
+    AND current_handler = 'it'
+    AND status IN ('open', 'in_progress')
+    AND assigned_to IS NOT DISTINCT FROM p_expected_assigned_to
+  RETURNING * INTO updated_ticket;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'This ticket changed before it could be reassigned.';
+  END IF;
+
+  INSERT INTO public.ticket_history (ticket_id, action, performed_by, details)
+  VALUES (updated_ticket.id, 'reassigned', actor_id, CASE WHEN p_assigned_to IS NULL THEN 'Returned to the IT queue' ELSE 'Assigned to NAS' END);
+  RETURN NEXT updated_ticket;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.complete_ticket(
+  p_ticket_id varchar,
+  p_expected_assigned_to uuid,
+  p_resolution_notes text,
+  p_internal_notes text,
+  p_closed_reason text
+)
+RETURNS SETOF public.tickets
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_catalog
+AS $$
+DECLARE
+  actor_id uuid := auth.uid();
+  actor_role text;
+  updated_ticket public.tickets;
+BEGIN
+  SELECT role INTO actor_role FROM public.users WHERE id = actor_id;
+  IF actor_role NOT IN ('nas', 'it') THEN
+    RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'Only NAS or IT staff can complete tickets.';
+  END IF;
+  IF p_closed_reason IS NOT NULL AND actor_role <> 'it' THEN
+    RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'Only IT staff can close or reject tickets.';
+  END IF;
+
+  UPDATE public.tickets
+  SET status = 'resolved',
+      resolution_notes = p_resolution_notes,
+      internal_notes = p_internal_notes,
+      closed_reason = p_closed_reason
+  WHERE id = p_ticket_id
+    AND current_handler = actor_role
+    AND status = 'in_progress'
+    AND assigned_to IS NOT DISTINCT FROM p_expected_assigned_to
+    AND (actor_role = 'it' OR assigned_to = actor_id)
+  RETURNING * INTO updated_ticket;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'This ticket changed before it could be completed.';
+  END IF;
+
+  INSERT INTO public.ticket_history (ticket_id, action, performed_by, details)
+  VALUES (
+    updated_ticket.id,
+    CASE WHEN p_closed_reason IS NULL THEN 'resolved' ELSE 'closed' END,
+    actor_id,
+    CASE WHEN p_closed_reason IS NULL THEN 'Resolved' ELSE 'Closed or rejected' END
+  );
+  RETURN NEXT updated_ticket;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.return_ticket_to_nas(
+  p_ticket_id varchar,
+  p_expected_assigned_to uuid
+)
+RETURNS SETOF public.tickets
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_catalog
+AS $$
+DECLARE
+  actor_id uuid := auth.uid();
+  updated_ticket public.tickets;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM public.users WHERE id = actor_id AND role = 'it') THEN
+    RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'Only IT staff can return tickets to NAS.';
+  END IF;
+
+  UPDATE public.tickets
+  SET current_handler = 'nas', status = 'open', assigned_to = NULL
+  WHERE id = p_ticket_id
+    AND current_handler = 'it'
+    AND status IN ('open', 'in_progress')
+    AND assigned_to IS NOT DISTINCT FROM p_expected_assigned_to
+  RETURNING * INTO updated_ticket;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'This ticket changed before it could be returned to NAS.';
+  END IF;
+
+  INSERT INTO public.ticket_history (ticket_id, action, performed_by, details)
+  VALUES (updated_ticket.id, 'deescalated', actor_id, 'Returned to NAS queue');
+  RETURN NEXT updated_ticket;
+END;
+$$;
+
+-- Auth users are not exposed through the Data API. This server-owned RPC
+-- revokes sessions first, then deletes auth.users; the profile FK cascades.
+CREATE OR REPLACE FUNCTION public.admin_delete_user(p_user_id uuid)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = auth, public, pg_catalog
+AS $$
+DECLARE
+  actor_id uuid := auth.uid();
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM public.users WHERE id = actor_id AND role = 'admin') THEN
+    RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'Only administrators can delete user accounts.';
+  END IF;
+  IF p_user_id = actor_id THEN
+    RAISE EXCEPTION USING ERRCODE = '22023', MESSAGE = 'Administrators cannot delete their own account.';
+  END IF;
+
+  DELETE FROM auth.sessions WHERE user_id = p_user_id;
+  DELETE FROM auth.users WHERE id = p_user_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'User account no longer exists.';
+  END IF;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.claim_ticket(varchar) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.forward_ticket_to_it(varchar) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.reassign_it_ticket(varchar, uuid, uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.complete_ticket(varchar, uuid, text, text, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.return_ticket_to_nas(varchar, uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.admin_delete_user(uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.claim_ticket(varchar) FROM anon;
+REVOKE ALL ON FUNCTION public.forward_ticket_to_it(varchar) FROM anon;
+REVOKE ALL ON FUNCTION public.reassign_it_ticket(varchar, uuid, uuid) FROM anon;
+REVOKE ALL ON FUNCTION public.complete_ticket(varchar, uuid, text, text, text) FROM anon;
+REVOKE ALL ON FUNCTION public.return_ticket_to_nas(varchar, uuid) FROM anon;
+REVOKE ALL ON FUNCTION public.admin_delete_user(uuid) FROM anon;
+
+GRANT EXECUTE ON FUNCTION public.claim_ticket(varchar) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.forward_ticket_to_it(varchar) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.reassign_it_ticket(varchar, uuid, uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.complete_ticket(varchar, uuid, text, text, text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.return_ticket_to_nas(varchar, uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_delete_user(uuid) TO authenticated;

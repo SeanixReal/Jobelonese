@@ -10,19 +10,14 @@ import {
   getUserFacingErrorMessage,
   signOut,
   subscribeToRealtimeChanges,
+  TICKET_CATEGORIES,
 } from "./lib.ts";
 import type { Lab, User, Station, TicketStatus, TicketWithDetails } from "./lib.ts";
 import "./StudentPortal.css";
 
 type PortalView = "dashboard" | "report" | "tickets" | "profile";
 
-const ISSUE_TYPES = [
-  "Hardware (monitor, mouse, keyboard)",
-  "No internet / network",
-  "Software / application",
-  "Projector / AV equipment",
-  "Other",
-];
+const ISSUE_TYPES = TICKET_CATEGORIES;
 
 const PROGRESS_STEPS: { key: TicketStatus; label: string }[] = [
   { key: "open", label: "Submitted" },

@@ -94,11 +94,6 @@ export default function AdminPortal() {
     loadProfile();
     loadAllData();
 
-    // Refresh data every 15 seconds
-    const interval = setInterval(() => {
-      refreshDataSilently();
-    }, 15000);
-
     const unsubscribe = subscribeToRealtimeChanges(
       [{ table: "users" }, { table: "tickets" }, { table: "ticket_history" }],
       () => {
@@ -107,7 +102,6 @@ export default function AdminPortal() {
     );
 
     return () => {
-      clearInterval(interval);
       unsubscribe();
     };
   }, [loadProfile, loadAllData, refreshDataSilently]);
@@ -146,7 +140,7 @@ export default function AdminPortal() {
       alert("You cannot delete your own account.");
       return;
     }
-    if (!confirm(`Are you absolutely sure you want to delete user ${userName}? This action removes their profile records entirely.`)) {
+    if (!confirm(`Permanently delete ${userName}'s sign-in account and profile? Their active sessions will be revoked and this cannot be undone.`)) {
       return;
     }
     setSubmittingAction(true);
@@ -155,9 +149,9 @@ export default function AdminPortal() {
       await deleteUser(userId);
       setEditingUser(null);
       await refreshDataSilently();
-      setActionSuccess(`Successfully removed user account for ${userName}.`);
+      setActionSuccess(`Permanently deleted the sign-in account and profile for ${userName}.`);
     } catch (err: any) {
-      setActionError(err.message || "Failed to delete user profile.");
+      setActionError(err.message || "Failed to delete the user account.");
     } finally {
       setSubmittingAction(false);
     }

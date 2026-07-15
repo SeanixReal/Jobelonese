@@ -12,19 +12,14 @@ import {
   forwardTicket,
   signOut,
   subscribeToRealtimeChanges,
+  TICKET_CATEGORIES,
 } from "./lib.ts";
 import type { Lab, User, Station, TicketWithDetails } from "./lib.ts";
 import "./StudentPortal.css";
 
 type PortalView = "dashboard" | "report" | "received" | "mine" | "resolved" | "profile";
 
-const ISSUE_TYPES = [
-  "Hardware (monitor, mouse, keyboard)",
-  "No internet / network",
-  "Software / application",
-  "Projector / AV equipment",
-  "Other",
-];
+const ISSUE_TYPES = TICKET_CATEGORIES;
 
 const STATUS_LABEL: Record<string, string> = {
   open: "Open",

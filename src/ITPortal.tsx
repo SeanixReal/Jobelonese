@@ -17,6 +17,7 @@ import {
   signOut,
   subscribeToRealtimeChanges,
 } from "./lib.ts";
+import { TICKET_CATEGORIES } from "./lib.ts";
 import type { Lab, Station, TicketWithDetails, Profile } from "./lib.ts";
 import LabMap from "./LabMap";
 import "./StudentPortal.css";
@@ -31,13 +32,7 @@ type ITPortalView =
   | "report"
   | "profile";
 
-const ISSUE_CATEGORIES = [
-  "Hardware (monitor, mouse, keyboard)",
-  "No internet / network",
-  "Software / application",
-  "Projector / AV equipment",
-  "Other",
-];
+const ISSUE_CATEGORIES = TICKET_CATEGORIES;
 
 export default function ITPortal() {
   const [currentView, setCurrentView] = useState<ITPortalView>("dashboard");
@@ -76,7 +71,7 @@ export default function ITPortal() {
   const [reportLabId, setReportLabId] = useState("");
   const [reportStationId, setReportStationId] = useState("");
   const [reportStationsList, setReportStationsList] = useState<Station[]>([]);
-  const [reportCategory, setReportCategory] = useState(ISSUE_CATEGORIES[0]);
+  const [reportCategory, setReportCategory] = useState<string>(ISSUE_CATEGORIES[0]);
   const [reportIssue, setReportIssue] = useState("");
   const [reportPriority, setReportPriority] = useState<"normal" | "high">("normal");
 
@@ -94,7 +89,8 @@ export default function ITPortal() {
     ticketsRef.current = tickets;
   }, [tickets]);
 
-  // Runs once to load portal data and start the polling loop.
+  // Realtime delivers changes; the initial bounded query avoids repeatedly
+  // downloading the entire staff dataset from every open tab.
   useEffect(() => {
     loadProfile();
     loadAllData();
@@ -103,11 +99,6 @@ export default function ITPortal() {
     if ("Notification" in window && Notification.permission === "default") {
       Notification.requestPermission();
     }
-
-    // Auto-refresh every 12 seconds to keep stats and queues fresh
-    const interval = setInterval(() => {
-      refreshDataSilently();
-    }, 12000);
 
     const unsubscribe = subscribeToRealtimeChanges(
       [
@@ -123,7 +114,6 @@ export default function ITPortal() {
     );
 
     return () => {
-      clearInterval(interval);
       unsubscribe();
     };
     // oxlint-disable-next-line react-hooks/exhaustive-deps
@@ -294,7 +284,11 @@ export default function ITPortal() {
     setActionError("");
     try {
       const targetNas = reassignNasId || null; // empty string means unassign
-      const updated = await revokeAndReassignTicket(selectedTicket.id, targetNas);
+      const updated = await revokeAndReassignTicket(
+        selectedTicket.id,
+        targetNas,
+        selectedTicket.assigned_to
+      );
       setSelectedTicket(updated);
       await refreshDataSilently();
       setActionSuccess("Ticket assignment updated.");
@@ -315,7 +309,8 @@ export default function ITPortal() {
       const updated = await resolveTicketWithNotes(
         selectedTicket.id,
         resolutionNotes.trim(),
-        internalNotes.trim()
+        internalNotes.trim(),
+        selectedTicket.assigned_to
       );
       setSelectedTicket(updated);
       await refreshDataSilently();
@@ -335,7 +330,11 @@ export default function ITPortal() {
     setSubmittingAction(true);
     setActionError("");
     try {
-      const updated = await closeTicket(selectedTicket.id, closedReason.trim());
+      const updated = await closeTicket(
+        selectedTicket.id,
+        closedReason.trim(),
+        selectedTicket.assigned_to
+      );
       setSelectedTicket(updated);
       await refreshDataSilently();
       setActionSuccess("Ticket closed/rejected.");
@@ -352,7 +351,7 @@ export default function ITPortal() {
     setSubmittingAction(true);
     setActionError("");
     try {
-      const updated = await deescalateTicket(selectedTicket.id);
+      const updated = await deescalateTicket(selectedTicket.id, selectedTicket.assigned_to);
       setSelectedTicket(updated);
       await refreshDataSilently();
       setActionSuccess("Ticket returned to NAS queue.");
