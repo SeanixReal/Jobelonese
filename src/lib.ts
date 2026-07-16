@@ -5,6 +5,7 @@ import { createClient } from "@supabase/supabase-js";
 // =========================================================
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const configuredAuthRedirectUrl = import.meta.env.VITE_AUTH_REDIRECT_URL?.trim();
 
 if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error(
@@ -23,7 +24,22 @@ export function isCitEmail(email: string): boolean {
 }
 
 export function getAuthRedirectUrl(): string | undefined {
-  return typeof window === "undefined" ? undefined : `${window.location.origin}${window.location.pathname}`;
+  if (typeof window === "undefined") return undefined;
+
+  const currentUrl = `${window.location.origin}${window.location.pathname}`;
+  if (!configuredAuthRedirectUrl) return currentUrl;
+
+  try {
+    const redirectUrl = new URL(configuredAuthRedirectUrl, window.location.origin);
+    if (redirectUrl.protocol !== "http:" && redirectUrl.protocol !== "https:") return currentUrl;
+
+    redirectUrl.pathname = window.location.pathname || "/";
+    redirectUrl.search = "";
+    redirectUrl.hash = "";
+    return redirectUrl.toString();
+  } catch {
+    return currentUrl;
+  }
 }
 
 export type AuthRedirectState = "verification" | "error" | null;
