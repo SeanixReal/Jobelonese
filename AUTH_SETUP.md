@@ -11,6 +11,9 @@ Create an ignored `.env.local` file in the repository root:
 ```text
 VITE_SUPABASE_URL=https://<your-project>.supabase.co
 VITE_SUPABASE_ANON_KEY=<your-publishable-key>
+# Production only: set this in Vercel to keep auth emails on the production app.
+# Omit it locally to use the current localhost origin.
+# VITE_AUTH_REDIRECT_URL=https://techfix-dev.vercel.app/
 ```
 
 The repository also has an ignored `.env` file in some local checkouts. Never commit real keys, and do
@@ -107,9 +110,10 @@ For the intended Supabase project:
 3. In **Authentication > Email Templates > Confirm signup**, keep a confirmation link that uses
    Supabase's `{{ .ConfirmationURL }}` variable. If the template builds the URL manually, use the
    configured redirect variable and make sure it matches the deployed app.
-4. In **Authentication > URL Configuration**, set the production Site URL and add the deployed app
-   URL and local development URL as allowed redirect URLs. For the current Vercel deployment, add
-   `https://techfix-dev.vercel.app/`.
+4. In Vercel's production environment, set `VITE_AUTH_REDIRECT_URL` to
+   `https://techfix-dev.vercel.app/`. In **Authentication > URL Configuration**, set the production
+   Site URL and add that URL and the local development URL as allowed redirect URLs. The app falls
+   back to the current browser origin when `VITE_AUTH_REDIRECT_URL` is omitted.
 5. In **Authentication > Hooks > Before User Created**, select
    `public.hook_restrict_signup_by_email_domain` after running the migration.
 
