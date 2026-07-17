@@ -5,6 +5,7 @@ import { createClient } from "@supabase/supabase-js";
 // =========================================================
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const configuredAuthRedirectUrl = import.meta.env.VITE_AUTH_REDIRECT_URL?.trim();
 
 if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error(
@@ -23,7 +24,22 @@ export function isCitEmail(email: string): boolean {
 }
 
 export function getAuthRedirectUrl(): string | undefined {
-  return typeof window === "undefined" ? undefined : `${window.location.origin}${window.location.pathname}`;
+  if (typeof window === "undefined") return undefined;
+
+  const currentUrl = `${window.location.origin}${window.location.pathname}`;
+  if (!configuredAuthRedirectUrl) return currentUrl;
+
+  try {
+    const redirectUrl = new URL(configuredAuthRedirectUrl, window.location.origin);
+    if (redirectUrl.protocol !== "http:" && redirectUrl.protocol !== "https:") return currentUrl;
+
+    redirectUrl.pathname = window.location.pathname || "/";
+    redirectUrl.search = "";
+    redirectUrl.hash = "";
+    return redirectUrl.toString();
+  } catch {
+    return currentUrl;
+  }
 }
 
 export type AuthRedirectState = "verification" | "error" | null;
@@ -160,6 +176,8 @@ export interface TicketWithDetails extends Ticket {
   assigned_user?: { fullname: string; email: string } | null;
 }
 
+// `tickets` also has a composite lab/station relationship. Name the direct
+// station FK explicitly so PostgREST does not treat this embed as ambiguous.
 const TICKET_SELECT = "id, user_id, issue, category, priority, status, current_handler, lab_id, station_id, assigned_to, created_at, resolved_at, escalated_at, escalated_by, resolution_notes, internal_notes, closed_reason, labs(name), stations:stations!tickets_station_id_fkey(station_number), user:users!tickets_user_id_fkey(fullname, email, student_or_staff_id, program), assigned_user:users!tickets_assigned_to_fkey(fullname, email)";
 
 // =========================================================
