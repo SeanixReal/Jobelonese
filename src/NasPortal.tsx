@@ -8,6 +8,7 @@ import {
   getLabs,
   getStations,
   claimTicket,
+  cancelNasClaim,
   resolveTicket,
   forwardTicket,
   signOut,
@@ -18,6 +19,10 @@ import type { Lab, User, Station, TicketWithDetails } from "./lib.ts";
 import "./StudentPortal.css";
 
 type PortalView = "dashboard" | "report" | "received" | "mine" | "resolved" | "profile";
+type PendingTicketAction = {
+  ticket: TicketWithDetails;
+  action: "claim" | "cancel_claim";
+};
 
 const ISSUE_TYPES = TICKET_CATEGORIES;
 
@@ -66,6 +71,9 @@ export default function NasPortal() {
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busyTicketId, setBusyTicketId] = useState<string | null>(null);
+  const [pendingTicketAction, setPendingTicketAction] = useState<PendingTicketAction | null>(null);
+  const [confirmationChecked, setConfirmationChecked] = useState(false);
+  const [confirmationError, setConfirmationError] = useState<string | null>(null);
 
   // Ticket currently shown in the inspector panel (Received / My tickets).
   const [inspectedTicket, setInspectedTicket] = useState<TicketWithDetails | null>(null);
@@ -169,15 +177,49 @@ export default function NasPortal() {
     setInspectedTicket(updated ?? null);
   }, [queue, inspectedTicketId]);
 
-  const handleClaim = async (ticketId: string) => {
-    setActionError(null);
-    setBusyTicketId(ticketId);
+  const openTicketConfirmation = (ticket: TicketWithDetails, action: PendingTicketAction["action"]) => {
+    setConfirmationChecked(false);
+    setConfirmationError(null);
+    setPendingTicketAction({ ticket, action });
+  };
+
+  const closeTicketConfirmation = () => {
+    if (busyTicketId) return;
+    setPendingTicketAction(null);
+    setConfirmationChecked(false);
+    setConfirmationError(null);
+  };
+
+  const handleTicketConfirmation = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!pendingTicketAction || !confirmationChecked) return;
+
+    const { ticket, action } = pendingTicketAction;
+    setConfirmationError(null);
+    setBusyTicketId(ticket.id);
     try {
-      await claimTicket(ticketId);
+      if (action === "claim") {
+        await claimTicket(ticket.id);
+      } else {
+        await cancelNasClaim(ticket.id);
+      }
       await loadAll();
-      setView("mine");
+      setPendingTicketAction(null);
+      setConfirmationChecked(false);
+      if (action === "claim") {
+        setView("mine");
+      } else {
+        setInspectedTicket(null);
+        setView("received");
+      }
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Couldn't claim that ticket.");
+      setConfirmationError(
+        err instanceof Error
+          ? err.message
+          : action === "claim"
+            ? "Couldn't claim that ticket."
+            : "Couldn't cancel your claim on that ticket."
+      );
     } finally {
       setBusyTicketId(null);
     }
@@ -331,52 +373,36 @@ export default function NasPortal() {
     },
   ];
 
-  function TicketRow({ ticket, action }: { ticket: TicketWithDetails; action: "claim" | "work" | "none" }) {
-    const busy = busyTicketId === ticket.id;
+  function TicketRow({ ticket }: { ticket: TicketWithDetails }) {
     const isInspected = inspectedTicket?.id === ticket.id;
     return (
-      <div className={`queue-row ${isInspected ? "row-selected" : ""}`} style={{ display: "flex", alignItems: "center", gap: 16, padding: "12px 16px" }}>
-        <span className="ticket-id-badge" style={{ flexShrink: 0 }}>{ticket.id}</span>
+      <div className={`queue-row ${isInspected ? "row-selected" : ""}`}>
+        <span className="ticket-id-badge">{ticket.id}</span>
         
-        <div style={{ flex: 1, minWidth: "150px" }}>
-          <p className="queue-issue-title" style={{ margin: "0 0 4px 0", fontWeight: 600 }}>
+        <div className="queue-ticket-summary">
+          <p className="queue-issue-title">
             {ticket.category}
           </p>
-          <span className="queue-issue-loc" style={{ display: "block", fontSize: "0.85em", opacity: 0.8 }}>
+          <span className="queue-issue-loc">
             {locationText(ticket)}
           </span>
         </div>
         
-        <span className={`priority-pill ${PRIORITY_CLASS[ticket.priority] ?? "priority-normal"}`} style={{ flexShrink: 0 }}>
+        <span className={`priority-pill ${PRIORITY_CLASS[ticket.priority] ?? "priority-normal"}`}>
           {ticket.priority}
         </span>
         
-        <span className={`status-pill ${STATUS_CLASS[ticket.status]}`} style={{ flexShrink: 0 }}>
+        <span className={`status-pill ${STATUS_CLASS[ticket.status]}`}>
           {STATUS_LABEL[ticket.status]}
         </span>
         
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
+        <div className="queue-row-actions">
           <button
             className="btn btn-ghost btn-sm"
             onClick={() => setInspectedTicket(ticket)}
           >
             Inspect
           </button>
-          {action === "claim" && (
-            <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => handleClaim(ticket.id)}>
-              {busy ? "Claiming..." : "Claim"}
-            </button>
-          )}
-          {action === "work" && (
-            <>
-              <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => handleResolve(ticket.id)}>
-                {busy ? "..." : "Fixed"}
-              </button>
-              <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => handleForward(ticket.id)}>
-                {busy ? "..." : "Forward to IT"}
-              </button>
-            </>
-          )}
         </div>
       </div>
     );
@@ -435,7 +461,7 @@ export default function NasPortal() {
                 <button
                   className="btn btn-primary btn-block-action"
                   disabled={busy}
-                  onClick={() => handleClaim(inspectedTicket.id)}
+                  onClick={() => openTicketConfirmation(inspectedTicket, "claim")}
                 >
                   {busy ? "Claiming..." : "Claim this ticket"}
                 </button>
@@ -455,6 +481,13 @@ export default function NasPortal() {
                     onClick={() => handleForward(inspectedTicket.id)}
                   >
                     {busy ? "..." : "Forward to IT department"}
+                  </button>
+                  <button
+                    className="btn btn-ghost btn-block-action margin-top-10"
+                    disabled={busy}
+                    onClick={() => openTicketConfirmation(inspectedTicket, "cancel_claim")}
+                  >
+                    {busy ? "..." : "Cancel claim"}
                   </button>
                 </>
               )}
@@ -641,7 +674,7 @@ export default function NasPortal() {
               </div>
               {received.length === 0 && <p className="empty-state">Queue is empty — nice work.</p>}
               {received.slice(0, 5).map((ticket) => (
-                <TicketRow key={ticket.id} ticket={ticket} action="claim" />
+                <TicketRow key={ticket.id} ticket={ticket} />
               ))}
             </div>
           </>
@@ -657,7 +690,7 @@ export default function NasPortal() {
               </div>
               {received.length === 0 && <p className="empty-state">Queue is empty — nice work.</p>}
               {received.map((ticket) => (
-                <TicketRow key={ticket.id} ticket={ticket} action="claim" />
+                <TicketRow key={ticket.id} ticket={ticket} />
               ))}
             </div>
             <div className="ticket-inspector-column">
@@ -674,7 +707,7 @@ export default function NasPortal() {
               </div>
               {mine.length === 0 && <p className="empty-state">You haven't claimed any tickets yet.</p>}
               {mine.map((ticket) => (
-                <TicketRow key={ticket.id} ticket={ticket} action="work" />
+                <TicketRow key={ticket.id} ticket={ticket} />
               ))}
             </div>
             <div className="ticket-inspector-column">
@@ -691,7 +724,7 @@ export default function NasPortal() {
               </div>
               {resolved.length === 0 && <p className="empty-state">Nothing resolved yet.</p>}
               {resolved.map((ticket) => (
-                <TicketRow key={ticket.id} ticket={ticket} action="none" />
+                <TicketRow key={ticket.id} ticket={ticket} />
               ))}
             </div>
             <div className="ticket-inspector-column">
@@ -743,6 +776,71 @@ export default function NasPortal() {
           </div>
         )}
       </main>
+
+      {pendingTicketAction && (
+        <div className="confirmation-overlay" role="presentation">
+          <form
+            className="confirmation-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="confirmation-title"
+            onSubmit={handleTicketConfirmation}
+          >
+            <div className="confirmation-heading">
+              <div>
+                <p className="confirmation-eyebrow">Confirm action</p>
+                <h2 id="confirmation-title">
+                  {pendingTicketAction.action === "claim" ? "Claim this ticket?" : "Cancel your claim?"}
+                </h2>
+              </div>
+              <button type="button" className="btn-close-pane" onClick={closeTicketConfirmation} aria-label="Close confirmation">
+                ×
+              </button>
+            </div>
+
+            <p className="confirmation-copy">
+              {pendingTicketAction.action === "claim"
+                ? "This ticket will move to your claimed tickets and become your responsibility."
+                : "This ticket will return to the NAS new-ticket queue for another staff member to claim."}
+            </p>
+
+            <div className="confirmation-ticket-summary">
+              <span className="ticket-id-badge">{pendingTicketAction.ticket.id}</span>
+              <div>
+                <strong>{pendingTicketAction.ticket.category}</strong>
+                <span>{locationText(pendingTicketAction.ticket)}</span>
+              </div>
+              <span className={`status-pill ${STATUS_CLASS[pendingTicketAction.ticket.status]}`}>
+                {STATUS_LABEL[pendingTicketAction.ticket.status]}
+              </span>
+            </div>
+
+            <label className="confirmation-check">
+              <input
+                type="checkbox"
+                checked={confirmationChecked}
+                onChange={(e) => setConfirmationChecked(e.target.checked)}
+              />
+              <span>I understand and want to continue.</span>
+            </label>
+
+            {confirmationError && <p className="form-error confirmation-error">{confirmationError}</p>}
+
+            <div className="confirmation-actions">
+              <button type="button" className="btn btn-ghost" onClick={closeTicketConfirmation} disabled={Boolean(busyTicketId)}>
+                Go back
+              </button>
+              <button type="submit" className="btn btn-primary" disabled={!confirmationChecked || Boolean(busyTicketId)}>
+                {busyTicketId
+                  ? "Saving..."
+                  : pendingTicketAction.action === "claim"
+                    ? "Confirm & claim"
+                    : "Confirm cancellation"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }

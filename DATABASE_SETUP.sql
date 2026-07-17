@@ -430,6 +430,38 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION public.cancel_nas_claim(p_ticket_id varchar)
+RETURNS SETOF public.tickets
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_catalog
+AS $$
+DECLARE
+  actor_id uuid := auth.uid();
+  updated_ticket public.tickets;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM public.users WHERE id = actor_id AND role = 'nas') THEN
+    RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'Only NAS staff can cancel a NAS claim.';
+  END IF;
+
+  UPDATE public.tickets
+  SET status = 'open', assigned_to = NULL
+  WHERE id = p_ticket_id
+    AND current_handler = 'nas'
+    AND status = 'in_progress'
+    AND assigned_to = actor_id
+  RETURNING * INTO updated_ticket;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'This ticket changed before your claim could be cancelled.';
+  END IF;
+
+  INSERT INTO public.ticket_history (ticket_id, action, performed_by, details)
+  VALUES (updated_ticket.id, 'claim_cancelled', actor_id, 'Claim cancelled; returned to NAS queue');
+  RETURN NEXT updated_ticket;
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION public.forward_ticket_to_it(p_ticket_id varchar)
 RETURNS SETOF public.tickets
 LANGUAGE plpgsql
@@ -618,12 +650,14 @@ END;
 $$;
 
 REVOKE ALL ON FUNCTION public.claim_ticket(varchar) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.cancel_nas_claim(varchar) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.forward_ticket_to_it(varchar) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.reassign_it_ticket(varchar, uuid, uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.complete_ticket(varchar, uuid, text, text, text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.return_ticket_to_nas(varchar, uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.admin_delete_user(uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.claim_ticket(varchar) FROM anon;
+REVOKE ALL ON FUNCTION public.cancel_nas_claim(varchar) FROM anon;
 REVOKE ALL ON FUNCTION public.forward_ticket_to_it(varchar) FROM anon;
 REVOKE ALL ON FUNCTION public.reassign_it_ticket(varchar, uuid, uuid) FROM anon;
 REVOKE ALL ON FUNCTION public.complete_ticket(varchar, uuid, text, text, text) FROM anon;
@@ -631,6 +665,7 @@ REVOKE ALL ON FUNCTION public.return_ticket_to_nas(varchar, uuid) FROM anon;
 REVOKE ALL ON FUNCTION public.admin_delete_user(uuid) FROM anon;
 
 GRANT EXECUTE ON FUNCTION public.claim_ticket(varchar) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.cancel_nas_claim(varchar) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.forward_ticket_to_it(varchar) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.reassign_it_ticket(varchar, uuid, uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.complete_ticket(varchar, uuid, text, text, text) TO authenticated;

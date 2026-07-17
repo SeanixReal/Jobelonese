@@ -123,8 +123,8 @@ ul{margin:0;padding:0;list-style:none;}
 .stat-value.blue{color:var(--blue);}
 
 /* ---------- LAYOUT GRID ---------- */
-.content-grid{display:grid;grid-template-columns:1.35fr 1fr;gap:24px;align-items:start;}
-.card{background:var(--panel);border:1px solid var(--panel-line);border-radius:14px;padding:24px;margin-bottom:24px;}
+.content-grid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(300px,1fr);gap:24px;align-items:start;}
+.card{min-width:0;background:var(--panel);border:1px solid var(--panel-line);border-radius:14px;padding:24px;margin-bottom:24px;}
 .card-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;}
 .card-title{font-family:var(--font-display);font-size:16.5px;font-weight:600;color:var(--text);margin:0;}
 
@@ -142,13 +142,15 @@ ul{margin:0;padding:0;list-style:none;}
 /* ---------- NAS/IT QUEUE ROWS ---------- */
 .queue-row{
   display:grid;
-  grid-template-columns:90px 1fr 90px 120px auto;
+  grid-template-columns:90px minmax(150px,1fr) auto auto auto;
   align-items:center;gap:12px;
-  padding:14px 4px;border-bottom:1px solid var(--panel-line);
+  padding:14px 16px;border-bottom:1px solid var(--panel-line);
 }
 .queue-row:last-child{border-bottom:none;}
 .queue-issue-title{font-size:13.5px;font-weight:600;color:var(--text);margin:0 0 3px;}
-.queue-issue-loc{font-family:var(--font-mono);font-size:11px;color:var(--text-muted);}
+.queue-ticket-summary{min-width:0;}
+.queue-issue-loc{display:block;font-family:var(--font-mono);font-size:11px;color:var(--text-muted);}
+.queue-row-actions{display:flex;align-items:center;}
 .priority-pill{
   font-family:var(--font-mono);font-size:9.5px;font-weight:600;letter-spacing:0.4px;
   padding:3px 8px;border-radius:20px;text-transform:uppercase;display:inline-block;text-align:center;
@@ -162,7 +164,12 @@ ul{margin:0;padding:0;list-style:none;}
 .card-link:hover{text-decoration:underline;}
 
 @media (max-width:760px){
-  .queue-row{grid-template-columns:1fr;gap:6px;}
+  .queue-row{grid-template-columns:1fr auto;gap:8px;padding:14px 0;}
+  .queue-ticket-summary{grid-column:1 / -1;grid-row:1;}
+  .queue-row > .ticket-id-badge{grid-column:1;grid-row:2;justify-self:start;}
+  .queue-row > .priority-pill{grid-column:1;grid-row:3;justify-self:start;}
+  .queue-row > .status-pill{grid-column:2;grid-row:3;justify-self:end;}
+  .queue-row-actions{grid-column:2;grid-row:2;justify-self:end;}
 }
 
 /* ---------- FORM FIELDS ---------- */
@@ -283,6 +290,42 @@ ul{margin:0;padding:0;list-style:none;}
   min-height:120px;color:var(--text-muted);font-size:13px;padding:24px;
 }
 
+/* ---------- CONFIRMATION DIALOG ---------- */
+.confirmation-overlay{
+  position:fixed;inset:0;z-index:50;
+  display:flex;align-items:center;justify-content:center;
+  padding:24px;background:rgba(10,14,20,0.72);backdrop-filter:blur(4px);
+}
+.confirmation-dialog{
+  width:min(100%,520px);background:var(--panel);border:1px solid var(--panel-line);
+  border-radius:16px;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,0.4);
+}
+.confirmation-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;}
+.confirmation-eyebrow{
+  margin:0 0 6px;font-family:var(--font-mono);font-size:10px;font-weight:600;
+  letter-spacing:1px;text-transform:uppercase;color:var(--teal);
+}
+.confirmation-heading h2{margin:0;font-family:var(--font-display);font-size:21px;color:var(--text);}
+.confirmation-copy{margin:14px 0 18px;color:var(--text-muted);font-size:14px;line-height:1.55;}
+.confirmation-ticket-summary{
+  display:flex;align-items:center;gap:12px;padding:14px;
+  background:var(--bg-soft);border:1px solid var(--panel-line);border-radius:10px;
+}
+.confirmation-ticket-summary > div{display:flex;min-width:0;flex:1;flex-direction:column;gap:4px;font-size:13px;}
+.confirmation-ticket-summary strong{color:var(--text);}
+.confirmation-ticket-summary span:not(.ticket-id-badge):not(.status-pill){color:var(--text-muted);font-family:var(--font-mono);font-size:11px;}
+.confirmation-check{display:flex;align-items:flex-start;gap:10px;margin:18px 0;color:var(--text);font-size:13.5px;line-height:1.4;cursor:pointer;}
+.confirmation-check input{width:16px;height:16px;margin:1px 0 0;accent-color:var(--accent);}
+.confirmation-error{margin:0 0 14px;}
+.confirmation-actions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap;}
+
 @media (max-width:1024px){
   .ticket-inspector-column{position:relative;top:0;}
+}
+@media (max-width:560px){
+  .confirmation-overlay{align-items:flex-end;padding:12px;}
+  .confirmation-dialog{padding:20px;border-radius:14px;}
+  .confirmation-ticket-summary{align-items:flex-start;flex-wrap:wrap;}
+  .confirmation-ticket-summary .status-pill{margin-left:calc(90px + 12px);}
+  .confirmation-actions .btn{width:100%;justify-content:center;}
 }

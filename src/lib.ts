@@ -472,6 +472,11 @@ export async function claimTicket(ticketId: string) {
   return runTicketAction("claim_ticket", { p_ticket_id: ticketId });
 }
 
+// NAS staff can release only their own in-progress ticket back to the NAS queue.
+export async function cancelNasClaim(ticketId: string) {
+  return runTicketAction("cancel_nas_claim", { p_ticket_id: ticketId });
+}
+
 // "Mark resolved" — usable by whichever staff role currently holds the
 // ticket (RLS checks current_handler for NAS, allows anything for IT).
 // resolved_at is set automatically by the set_resolved_at trigger.

@@ -154,7 +154,8 @@ characters, and bounded note fields. A composite foreign key from `(lab_id, stat
 `stations(lab_id, id)` prevents a ticket from referring to a station in a different laboratory.
 
 Staff ticket changes use protected RPCs rather than direct table updates. `claim_ticket`,
-`forward_ticket_to_it`, `reassign_it_ticket`, `complete_ticket`, and `return_ticket_to_nas` check
+`cancel_nas_claim`, `forward_ticket_to_it`, `reassign_it_ticket`, `complete_ticket`, and
+`return_ticket_to_nas` check
 the caller's server-side role and expected assignment/state in the same update, returning a conflict
 instead of overwriting a newer change. Each RPC creates its history record within that transaction.
 
