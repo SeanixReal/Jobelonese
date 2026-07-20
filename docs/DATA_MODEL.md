@@ -148,6 +148,17 @@ The live table does not expose the previously documented `status` field.
 `createTicket` supplies `user_id`, `lab_id`, `station_id`, `category`, `issue`, and `priority`.
 Database defaults must supply any other required values.
 
+Ticket writes are validated in the database, including the canonical five categories, `normal|high`
+priority, `open|in_progress|resolved` status, `nas|it` handler, a nonblank issue of at most 2,000
+characters, and bounded note fields. A composite foreign key from `(lab_id, station_id)` to
+`stations(lab_id, id)` prevents a ticket from referring to a station in a different laboratory.
+
+Staff ticket changes use protected RPCs rather than direct table updates. `claim_ticket`,
+`cancel_nas_claim`, `forward_ticket_to_it`, `reassign_it_ticket`, `complete_ticket`, and
+`return_ticket_to_nas` check
+the caller's server-side role and expected assignment/state in the same update, returning a conflict
+instead of overwriting a newer change. Each RPC creates its history record within that transaction.
+
 ### `ticket_history`
 
 | Column | Type | Notes |
@@ -171,6 +182,17 @@ server-side role controls.
 | `labs`, `stations` | Authenticated users may read reference data; management writes are limited to IT/admin. |
 | `ticket_history` | Staff/admin may read appropriate history; inserts must be authenticated and tied to the acting user. |
 
+Direct staff `UPDATE` access to `tickets` and browser inserts into `ticket_history` are deliberately
+not granted. The protected workflow RPCs perform the permitted mutations and audit writes.
+
+### Protected admin account deletion
+
+`public.admin_delete_user(uuid)` is executable only by authenticated callers and verifies the
+caller's `admin` role against `public.users` inside a `SECURITY DEFINER` function. It refuses
+self-deletion, removes the target's Auth sessions, then deletes `auth.users`; the profile foreign
+key cascades its corresponding `public.users` row. The browser never receives a service-role key or
+direct access to the `auth` schema.
+
 The current client code now adds the explicit `user_id` filter for `getMyTickets()`. Signup no longer
 accepts a role, and the migration's profile trigger assigns `student`; the private role-assignment
 trigger is the database authorization boundary for later changes. The live schema probe confirmed
@@ -181,7 +203,9 @@ permissions.
 
 The client subscribes to Postgres Changes for `tickets` so student, NAS, IT, and admin views update
 after a ticket is created or changed without a manual reload. The IT and admin views also subscribe to
-the related `users`, `labs`, `stations`, and `ticket_history` tables used by their dashboards.
+the related `users`, `labs`, `stations`, and `ticket_history` tables used by their dashboards. Staff
+views no longer poll full tables; their initial ticket, user, lab, and history reads are capped at 100
+records per request.
 
 Realtime still evaluates the subscriber's RLS policies; adding a table to the
 `supabase_realtime` publication does not grant access to rows. Run

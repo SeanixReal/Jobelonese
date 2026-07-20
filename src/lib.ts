@@ -112,6 +112,17 @@ export type TicketStatus = "open" | "in_progress" | "resolved";
 export type TicketPriority = "normal" | "high";
 export type HandlerRole = "nas" | "it";
 
+export const TICKET_CATEGORIES = [
+  "Hardware (monitor, mouse, keyboard)",
+  "No internet / network",
+  "Software / application",
+  "Projector / AV equipment",
+  "Other",
+] as const;
+
+export const MAX_TICKET_ISSUE_LENGTH = 2000;
+export const STAFF_PAGE_SIZE = 100;
+
 export interface Profile {
   id: string;
   email: string;
@@ -167,7 +178,7 @@ export interface TicketWithDetails extends Ticket {
 
 // `tickets` also has a composite lab/station relationship. Name the direct
 // station FK explicitly so PostgREST does not treat this embed as ambiguous.
-const TICKET_SELECT = "*, labs(name), stations:stations!tickets_station_id_fkey(station_number), user:users!tickets_user_id_fkey(fullname, email, student_or_staff_id, program), assigned_user:users!tickets_assigned_to_fkey(fullname, email)";
+const TICKET_SELECT = "id, user_id, issue, category, priority, status, current_handler, lab_id, station_id, assigned_to, created_at, resolved_at, escalated_at, escalated_by, resolution_notes, internal_notes, closed_reason, labs(name), stations:stations!tickets_station_id_fkey(station_number), user:users!tickets_user_id_fkey(fullname, email, student_or_staff_id, program), assigned_user:users!tickets_assigned_to_fkey(fullname, email)";
 
 // =========================================================
 // AUTH
@@ -356,14 +367,35 @@ export async function createTicket(input: CreateTicketInput) {
   } = await supabase.auth.getUser();
   if (!user) throw new Error("Not signed in.");
 
+  const labId = Number(input.labId);
+  const stationId = input.stationId ? Number(input.stationId) : null;
+  const category = input.category.trim();
+  const issue = input.issue.trim();
+
+  if (!Number.isSafeInteger(labId) || labId <= 0) {
+    throw new Error("Choose a valid laboratory.");
+  }
+  if (stationId !== null && (!Number.isSafeInteger(stationId) || stationId <= 0)) {
+    throw new Error("Choose a valid station.");
+  }
+  if (!TICKET_CATEGORIES.includes(category as (typeof TICKET_CATEGORIES)[number])) {
+    throw new Error("Choose a valid issue category.");
+  }
+  if (!issue || issue.length > MAX_TICKET_ISSUE_LENGTH) {
+    throw new Error(`Describe the issue using 1 to ${MAX_TICKET_ISSUE_LENGTH} characters.`);
+  }
+  if (input.priority !== undefined && input.priority !== "normal" && input.priority !== "high") {
+    throw new Error("Choose a valid priority.");
+  }
+
   const { data, error } = await supabase
     .from("tickets")
     .insert({
       user_id: user.id,
-      lab_id: Number(input.labId),
-      station_id: input.stationId ? Number(input.stationId) : null,
-      category: input.category,
-      issue: input.issue,
+      lab_id: labId,
+      station_id: stationId,
+      category,
+      issue,
       priority: input.priority ?? "normal",
     })
     .select(TICKET_SELECT)
@@ -420,36 +452,46 @@ export async function getItQueue(): Promise<TicketWithDetails[]> {
 // "Claim" button — works for both NAS and IT portals. Your real schema
 // has no separate ticket_assignments table, so this just sets
 // assigned_to directly on the ticket row.
-export async function claimTicket(ticketId: string) {
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not signed in.");
+function asTicketConflict(error: { code?: string; message?: string }): Error {
+  if (error.code === "P0001") {
+    return new Error(error.message || "This ticket changed. Refresh and try again.");
+  }
+  return new Error(error.message || "Ticket update failed.");
+}
 
-  const { data, error } = await supabase
-    .from("tickets")
-    .update({ assigned_to: user.id, status: "in_progress" })
-    .eq("id", ticketId)
-    .select(TICKET_SELECT)
-    .single();
-
-  if (error) throw error;
+async function runTicketAction(
+  functionName: string,
+  parameters: Record<string, string | null | undefined>
+): Promise<TicketWithDetails> {
+  const { data, error } = await supabase.rpc(functionName, parameters).select(TICKET_SELECT).single();
+  if (error) throw asTicketConflict(error);
   return data as unknown as TicketWithDetails;
+}
+
+export async function claimTicket(ticketId: string) {
+  return runTicketAction("claim_ticket", { p_ticket_id: ticketId });
+}
+
+// NAS staff can release only their own in-progress ticket back to the NAS queue.
+export async function cancelNasClaim(ticketId: string) {
+  return runTicketAction("cancel_nas_claim", { p_ticket_id: ticketId });
 }
 
 // "Mark resolved" — usable by whichever staff role currently holds the
 // ticket (RLS checks current_handler for NAS, allows anything for IT).
 // resolved_at is set automatically by the set_resolved_at trigger.
 export async function resolveTicket(ticketId: string) {
-  const { data, error } = await supabase
-    .from("tickets")
-    .update({ status: "resolved" })
-    .eq("id", ticketId)
-    .select(TICKET_SELECT)
-    .single();
-
-  if (error) throw error;
-  return data as unknown as TicketWithDetails;
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not signed in.");
+  return runTicketAction("complete_ticket", {
+    p_ticket_id: ticketId,
+    p_expected_assigned_to: user.id,
+    p_resolution_notes: null,
+    p_internal_notes: null,
+    p_closed_reason: null,
+  });
 }
 
 // "Forward to IT" — only valid while current_handler is still 'nas';
@@ -457,22 +499,18 @@ export async function resolveTicket(ticketId: string) {
 // Puts the ticket back to 'open' and clears the NAS assignment so it
 // shows up as unclaimed in the IT queue.
 export async function forwardTicket(ticketId: string) {
-  const { data, error } = await supabase
-    .from("tickets")
-    .update({ current_handler: "it", status: "open", assigned_to: null })
-    .eq("id", ticketId)
-    .select(TICKET_SELECT)
-    .single();
-
-  if (error) throw error;
-  return data as unknown as TicketWithDetails;
+  return runTicketAction("forward_ticket_to_it", { p_ticket_id: ticketId });
 }
 
 // =========================================================
 // LABS / STATIONS
 // =========================================================
 export async function getLabs(): Promise<Lab[]> {
-  const { data, error } = await supabase.from("labs").select("*").order("name");
+  const { data, error } = await supabase
+    .from("labs")
+    .select("id, name, created_at")
+    .order("name")
+    .limit(STAFF_PAGE_SIZE);
   if (error) throw error;
   return data as Lab[];
 }
@@ -480,7 +518,7 @@ export async function getLabs(): Promise<Lab[]> {
 export async function getStations(labId: string): Promise<Station[]> {
   const { data, error } = await supabase
     .from("stations")
-    .select("*")
+    .select("id, lab_id, station_number, created_at")
     .eq("lab_id", Number(labId))
     .order("station_number");
 
@@ -493,141 +531,59 @@ export async function getStations(labId: string): Promise<Station[]> {
 // =========================================================
 
 export async function claimTicketAsIt(ticketId: string) {
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not signed in.");
-
-  const { data, error } = await supabase
-    .from("tickets")
-    .update({ assigned_to: user.id, status: "in_progress", current_handler: "it" })
-    .eq("id", ticketId)
-    .select(TICKET_SELECT)
-    .single();
-
-  if (error) throw error;
-  await addTicketHistory(ticketId, "claimed", "Claimed by IT staff");
-  return data as unknown as TicketWithDetails;
+  return runTicketAction("claim_ticket", { p_ticket_id: ticketId });
 }
 
-export async function revokeAndReassignTicket(ticketId: string, assignedToId: string | null) {
-  const updateData: any = { assigned_to: assignedToId };
-  if (assignedToId === null) {
-    updateData.status = "open";
-  } else {
-    updateData.status = "in_progress";
-  }
-
-  const { data, error } = await supabase
-    .from("tickets")
-    .update(updateData)
-    .eq("id", ticketId)
-    .select(TICKET_SELECT)
-    .single();
-
-  if (error) throw error;
-  await addTicketHistory(ticketId, "reassigned", `Reassigned to ${assignedToId || "unassigned"}`);
-  return data as unknown as TicketWithDetails;
+export async function revokeAndReassignTicket(
+  ticketId: string,
+  assignedToId: string | null,
+  expectedAssignedToId: string | null
+) {
+  return runTicketAction("reassign_it_ticket", {
+    p_ticket_id: ticketId,
+    p_assigned_to: assignedToId,
+    p_expected_assigned_to: expectedAssignedToId,
+  });
 }
 
-export async function resolveTicketWithNotes(ticketId: string, resolutionNotes: string, internalNotes?: string) {
-  const { data, error } = await supabase
-    .from("tickets")
-    .update({ 
-      status: "resolved", 
-      resolution_notes: resolutionNotes, 
-      internal_notes: internalNotes || null 
-    })
-    .eq("id", ticketId)
-    .select(TICKET_SELECT)
-    .single();
-
-  if (error) throw error;
-  await addTicketHistory(ticketId, "resolved", `Resolved: ${resolutionNotes}`);
-  return data as unknown as TicketWithDetails;
+export async function resolveTicketWithNotes(
+  ticketId: string,
+  resolutionNotes: string,
+  internalNotes: string | undefined,
+  expectedAssignedToId: string | null
+) {
+  return runTicketAction("complete_ticket", {
+    p_ticket_id: ticketId,
+    p_expected_assigned_to: expectedAssignedToId,
+    p_resolution_notes: resolutionNotes,
+    p_internal_notes: internalNotes || null,
+    p_closed_reason: null,
+  });
 }
 
-export async function closeTicket(ticketId: string, reason: string) {
-  const { data, error } = await supabase
-    .from("tickets")
-    .update({ 
-      status: "resolved", 
-      closed_reason: reason, 
-      resolution_notes: `Closed/Rejected: ${reason}` 
-    })
-    .eq("id", ticketId)
-    .select(TICKET_SELECT)
-    .single();
-
-  if (error) throw error;
-  await addTicketHistory(ticketId, "closed", `Closed: ${reason}`);
-  return data as unknown as TicketWithDetails;
+export async function closeTicket(ticketId: string, reason: string, expectedAssignedToId: string | null) {
+  return runTicketAction("complete_ticket", {
+    p_ticket_id: ticketId,
+    p_expected_assigned_to: expectedAssignedToId,
+    p_resolution_notes: `Closed/Rejected: ${reason}`,
+    p_internal_notes: null,
+    p_closed_reason: reason,
+  });
 }
 
-export async function escalateTicket(ticketId: string, internalNotes?: string) {
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  const { data, error } = await supabase
-    .from("tickets")
-    .update({ 
-      current_handler: "it", 
-      status: "open", 
-      assigned_to: null, 
-      escalated_at: new Date().toISOString(),
-      escalated_by: user?.id || null,
-      internal_notes: internalNotes || null
-    })
-    .eq("id", ticketId)
-    .select(TICKET_SELECT)
-    .single();
-
-  if (error) throw error;
-  await addTicketHistory(ticketId, "escalated", `Escalated to IT: ${internalNotes || "No notes"}`);
-  return data as unknown as TicketWithDetails;
+export async function deescalateTicket(ticketId: string, expectedAssignedToId: string | null) {
+  return runTicketAction("return_ticket_to_nas", {
+    p_ticket_id: ticketId,
+    p_expected_assigned_to: expectedAssignedToId,
+  });
 }
 
-export async function deescalateTicket(ticketId: string) {
-  const { data, error } = await supabase
-    .from("tickets")
-    .update({ 
-      current_handler: "nas", 
-      status: "open", 
-      assigned_to: null 
-    })
-    .eq("id", ticketId)
-    .select(TICKET_SELECT)
-    .single();
-
-  if (error) throw error;
-  await addTicketHistory(ticketId, "deescalated", "Sent back to NAS queue");
-  return data as unknown as TicketWithDetails;
-}
-
-export async function addTicketHistory(ticketId: string, action: string, details?: string) {
-  try {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) return;
-
-    await supabase.from("ticket_history").insert({
-      ticket_id: ticketId,
-      action,
-      performed_by: user.id,
-      details: details || null,
-    });
-  } catch (err) {
-    console.error("Error writing ticket history:", err);
-  }
-}
-
-export async function getAllTickets(): Promise<TicketWithDetails[]> {
+export async function getAllTickets(limit = STAFF_PAGE_SIZE): Promise<TicketWithDetails[]> {
   const { data, error } = await supabase
     .from("tickets")
     .select(TICKET_SELECT)
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .limit(limit);
 
   if (error) throw error;
   return data as unknown as TicketWithDetails[];
@@ -636,9 +592,10 @@ export async function getAllTickets(): Promise<TicketWithDetails[]> {
 export async function getNasUsers(): Promise<Profile[]> {
   const { data, error } = await supabase
     .from("users")
-    .select("*")
+    .select("id, email, fullname, role, student_or_staff_id, program, created_at")
     .eq("role", "nas")
-    .order("fullname");
+    .order("fullname")
+    .limit(STAFF_PAGE_SIZE);
 
   if (error) throw error;
   return data as Profile[];
@@ -649,7 +606,8 @@ export async function getTicketHistory(ticketId: string) {
     .from("ticket_history")
     .select("*, users:users(fullname)")
     .eq("ticket_id", ticketId)
-    .order("created_at", { ascending: true });
+    .order("created_at", { ascending: true })
+    .limit(STAFF_PAGE_SIZE);
 
   if (error) throw error;
   return data;
@@ -733,8 +691,9 @@ export async function getAllUsers(): Promise<Profile[]> {
   await requireCurrentAdmin();
   const { data, error } = await supabase
     .from("users")
-    .select("*")
-    .order("fullname");
+    .select("id, email, fullname, role, student_or_staff_id, program, created_at")
+    .order("fullname")
+    .limit(STAFF_PAGE_SIZE);
 
   if (error) throw error;
   return data as Profile[];
@@ -756,16 +715,17 @@ export async function updateUserRole(userId: string, newRole: Role): Promise<Pro
 
 export async function deleteUser(userId: string): Promise<void> {
   await requireCurrentAdmin();
-  const { error } = await supabase.from("users").delete().eq("id", userId);
+  const { error } = await supabase.rpc("admin_delete_user", { p_user_id: userId });
   if (error) throw error;
 }
 
-export async function getAllTicketHistory(): Promise<any[]> {
+export async function getAllTicketHistory(limit = STAFF_PAGE_SIZE): Promise<any[]> {
   await requireCurrentAdmin();
   const { data, error } = await supabase
     .from("ticket_history")
     .select("*, users:users(fullname)")
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .limit(limit);
 
   if (error) throw error;
   return data;
