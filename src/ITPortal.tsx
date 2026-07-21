@@ -83,11 +83,19 @@ export default function ITPortal() {
   const [searchQuery, setSearchQuery] = useState("");
 
   const ticketsRef = useRef<TicketWithDetails[]>([]);
+  const selectedTicketRef = useRef<TicketWithDetails | null>(null);
 
   // Sync ticketsRef.current with tickets state
   useEffect(() => {
     ticketsRef.current = tickets;
   }, [tickets]);
+
+  // Sync selectedTicketRef.current with selectedTicket state. refreshDataSilently
+  // is captured once by the mount-only realtime effect below, so it must read the
+  // current selection through a ref rather than the (stale) selectedTicket closure.
+  useEffect(() => {
+    selectedTicketRef.current = selectedTicket;
+  }, [selectedTicket]);
 
   // Realtime delivers changes; the initial bounded query avoids repeatedly
   // downloading the entire staff dataset from every open tab.
@@ -189,8 +197,8 @@ export default function ITPortal() {
       setLabs(labData);
 
       // Keep inspected ticket in sync if open
-      if (selectedTicket) {
-        const updated = tData.find((t) => t.id === selectedTicket.id);
+      if (selectedTicketRef.current) {
+        const updated = tData.find((t) => t.id === selectedTicketRef.current!.id);
         if (updated) {
           setSelectedTicket(updated);
         }
