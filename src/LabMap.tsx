@@ -7,6 +7,7 @@ import {
   normalizeStationNumber,
 } from "./lib.ts";
 import type { Lab, Station, TicketWithDetails } from "./lib.ts";
+import StationQrPanel from "./StationQrPanel";
 
 interface LabMapProps {
   labs: Lab[];
@@ -337,6 +338,7 @@ export default function LabMap({
             {/* Sidebar Editor / Info Pane */}
             <div className="editor-section">
               {selected ? (
+                <>
                 <div className="pane-card selected-station-pane animate-fade-in">
                   <div className="pane-header">
                     <div>
@@ -411,6 +413,12 @@ export default function LabMap({
                     })()}
                   </div>
                 </div>
+                <StationQrPanel
+                  labId={selected.labId}
+                  labName={selectedLabName}
+                  station={selected.station}
+                />
+                </>
               ) : (
                 <div className="pane-card placeholder-pane">
                   <p>Click any station tile in any lab to inspect details, view active tickets, or delete it.</p>

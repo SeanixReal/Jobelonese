@@ -64,6 +64,108 @@ export function getAuthRedirectState(): AuthRedirectState {
   return type === "signup" ? "verification" : null;
 }
 
+// =========================================================
+// STATION QR DEEP LINKS
+// =========================================================
+// A printable QR sticker on each PC encodes a link back to the app with the
+// lab (and optional station) in the query string. Scanning it with a phone
+// camera opens TechFix and pre-fills the "Report an issue" form for that exact
+// computer. See buildStationTicketUrl / readStationTicketIntent below.
+export interface StationTicketIntent {
+  labId: string;
+  stationId: string | null;
+}
+
+/** Build the absolute URL a station QR code should encode. */
+export function buildStationTicketUrl(labId: number | string, stationId?: number | string | null): string {
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  const pathname = typeof window !== "undefined" ? window.location.pathname : "/";
+  const params = new URLSearchParams();
+  params.set("lab", String(labId));
+  if (stationId !== undefined && stationId !== null && String(stationId) !== "") {
+    params.set("station", String(stationId));
+  }
+  return `${origin}${pathname}?${params.toString()}`;
+}
+
+// A scanned intent is stashed here so it survives the sign-up email
+// confirmation round-trip, which strips the query string from the URL.
+const STATION_INTENT_KEY = "techfix:station-intent";
+const STATION_INTENT_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+function parseStationIntentFromUrl(): StationTicketIntent | null {
+  if (typeof window === "undefined") return null;
+
+  const params = new URLSearchParams(window.location.search);
+  const labParam = params.get("lab");
+  if (!labParam || !/^\d+$/.test(labParam)) return null;
+
+  const stationParam = params.get("station");
+  const stationId = stationParam && /^\d+$/.test(stationParam) ? stationParam : null;
+  return { labId: labParam, stationId };
+}
+
+/**
+ * Capture a station/lab intent from the current URL into storage, if present.
+ * Call this once at app startup — before any auth redirect can drop the query
+ * string — so a brand-new user who scans, signs up, and confirms their email
+ * still lands on the right pre-filled form.
+ */
+export function persistStationTicketIntent(): void {
+  const intent = parseStationIntentFromUrl();
+  if (!intent) return;
+  try {
+    window.localStorage.setItem(
+      STATION_INTENT_KEY,
+      JSON.stringify({ ...intent, ts: Date.now() })
+    );
+  } catch {
+    // Storage unavailable (private mode / disabled) — the URL still carries the
+    // intent for same-tab flows, so this is a best-effort enhancement only.
+  }
+}
+
+/**
+ * Read a station/lab "report here" intent — from the current URL first, then
+ * from storage (within a TTL) as a fallback for the post-confirmation redirect.
+ * Only returns positive integer ids, so a malformed link is ignored.
+ */
+export function readStationTicketIntent(): StationTicketIntent | null {
+  const fromUrl = parseStationIntentFromUrl();
+  if (fromUrl) return fromUrl;
+
+  try {
+    const raw = window.localStorage.getItem(STATION_INTENT_KEY);
+    if (!raw) return null;
+    const stored = JSON.parse(raw) as StationTicketIntent & { ts?: number };
+    if (!stored?.labId || !/^\d+$/.test(stored.labId)) return null;
+    if (!stored.ts || Date.now() - stored.ts > STATION_INTENT_TTL_MS) {
+      window.localStorage.removeItem(STATION_INTENT_KEY);
+      return null;
+    }
+    const stationId = stored.stationId && /^\d+$/.test(stored.stationId) ? stored.stationId : null;
+    return { labId: stored.labId, stationId };
+  } catch {
+    return null;
+  }
+}
+
+/** Clear the intent from both the URL and storage after it is consumed. */
+export function clearStationTicketIntent(): void {
+  if (typeof window === "undefined") return;
+
+  const url = new URL(window.location.href);
+  url.searchParams.delete("lab");
+  url.searchParams.delete("station");
+  window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+
+  try {
+    window.localStorage.removeItem(STATION_INTENT_KEY);
+  } catch {
+    // ignore
+  }
+}
+
 export type RealtimeTable = "users" | "labs" | "stations" | "tickets" | "ticket_history";
 
 export interface RealtimeSubscription {

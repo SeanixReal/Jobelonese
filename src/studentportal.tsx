@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent, ReactNode } from "react";
 import {
   supabase,
@@ -8,6 +8,8 @@ import {
   getLabs,
   getStations,
   getUserFacingErrorMessage,
+  readStationTicketIntent,
+  clearStationTicketIntent,
   signOut,
   subscribeToRealtimeChanges,
   TICKET_CATEGORIES,
@@ -74,6 +76,12 @@ export default function StudentPortal() {
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [justSubmitted, setJustSubmitted] = useState(false);
+  const [qrPrefilled, setQrPrefilled] = useState(false);
+
+  // A station QR sticker deep-links here with ?lab=..&station=.. — captured
+  // once on first render so a later navigation can't re-trigger it.
+  const qrIntentRef = useRef(readStationTicketIntent());
+  const pendingStationIdRef = useRef<string | null>(null);
 
   const loadAll = async () => {
     setLoading(true);
@@ -99,6 +107,19 @@ export default function StudentPortal() {
 
   useEffect(() => {
     loadAll();
+  }, []);
+
+  // Opened from a station QR sticker: jump to the report form with the lab
+  // pre-selected. The station is applied once its lab's stations load (below).
+  useEffect(() => {
+    const intent = qrIntentRef.current;
+    if (!intent) return;
+    pendingStationIdRef.current = intent.stationId;
+    setLabId(intent.labId);
+    setCategory("");
+    setView("report");
+    setQrPrefilled(true);
+    clearStationTicketIntent();
   }, []);
 
   useEffect(() => {
@@ -137,7 +158,16 @@ export default function StudentPortal() {
 
     getStations(labId)
       .then((nextStations) => {
-        if (active) setStations(nextStations);
+        if (!active) return;
+        setStations(nextStations);
+        // Apply a station carried in from a QR link, once its options exist.
+        const pending = pendingStationIdRef.current;
+        if (pending) {
+          pendingStationIdRef.current = null;
+          if (nextStations.some((s) => String(s.id) === pending)) {
+            setStationId(pending);
+          }
+        }
       })
       .catch((err) => {
         if (active) setFormError(err.message);
@@ -183,6 +213,7 @@ export default function StudentPortal() {
       setStationId("");
       setCategory("");
       setDescription("");
+      setQrPrefilled(false);
       await loadAll();
       setJustSubmitted(true);
       setView("tickets");
@@ -278,6 +309,12 @@ export default function StudentPortal() {
       <div className="card-head">
         <h2 className="card-title">Report an issue</h2>
       </div>
+      {qrPrefilled && (
+        <p className="form-success">
+          📷 Scanned a station QR — we've pre-filled the location for you. Just pick the issue type
+          and describe it.
+        </p>
+      )}
       <form onSubmit={handleSubmit}>
         <div className="row-2">
           <div className="field">
@@ -285,7 +322,11 @@ export default function StudentPortal() {
             <select
               id="lab"
               value={labId}
-              onChange={(e: ChangeEvent<HTMLSelectElement>) => setLabId(e.target.value)}
+              onChange={(e: ChangeEvent<HTMLSelectElement>) => {
+                setLabId(e.target.value);
+                setQrPrefilled(false);
+                pendingStationIdRef.current = null;
+              }}
               required
             >
               <option value="" disabled>
