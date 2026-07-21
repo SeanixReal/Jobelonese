@@ -252,6 +252,18 @@ export default function NasPortal() {
     }
   };
 
+  const handleInspectTicket = (ticket: TicketWithDetails) => {
+    setInspectedTicket(ticket);
+
+    if (ticket.status === "open") {
+      setView("received");
+    } else if (ticket.status === "resolved") {
+      setView("resolved");
+    } else {
+      setView("mine");
+    }
+  };
+
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setFormError(null);
@@ -399,7 +411,7 @@ export default function NasPortal() {
         <div className="queue-row-actions">
           <button
             className="btn btn-ghost btn-sm"
-            onClick={() => setInspectedTicket(ticket)}
+            onClick={() => handleInspectTicket(ticket)}
           >
             Inspect
           </button>
