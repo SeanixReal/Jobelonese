@@ -6,7 +6,8 @@ for slides. Keep only the **core** version on a slide; link the full version in
 your documentation (per the presentation guide).
 
 Contents: [Use Case](#1-use-case-diagram) · [Class](#2-class-diagram) ·
-[Sequence](#3-sequence-diagram) · [ERD](#4-entity-relationship-diagram-erd)
+[Sequence](#3-sequence-diagram) · [QR Scan Flow](#3b-station-qr-scan-flow) ·
+[ERD](#4-entity-relationship-diagram-erd)
 
 ---
 
@@ -37,12 +38,14 @@ flowchart LR
         uc10(["Manage labs & stations"])
         uc11(["Manage users & roles"])
         uc12(["Review history / logs"])
+        uc13(["Scan station QR → report"])
+        uc14(["Print station QR labels"])
     end
 
-    student --- uc1 & uc2 & uc3
-    faculty --- uc1 & uc2 & uc3
+    student --- uc1 & uc13 & uc2 & uc3
+    faculty --- uc1 & uc13 & uc2 & uc3
     nas --- uc1 & uc4 & uc5 & uc6 & uc7
-    it --- uc1 & uc8 & uc5 & uc9 & uc7 & uc10 & uc12
+    it --- uc1 & uc8 & uc5 & uc9 & uc7 & uc10 & uc14 & uc12
     admin --- uc1 & uc8 & uc11 & uc12
 
     classDef actor fill:#e3f2fd,stroke:#1565c0,stroke-width:2px;
@@ -159,6 +162,51 @@ sequenceDiagram
     L-->>P: updated ticket list
     P-->>St: Ticket shown in "My Tickets"
 ```
+
+---
+
+## 3b. Station QR scan flow
+
+Each PC carries a unique QR sticker encoding `…/?lab=<id>&station=<id>`. Scanning
+it with a phone opens TechFix with the report form pre-filled for that exact
+computer — even across a fresh sign-up, since the intent is stashed before the
+email-confirmation redirect can strip the URL.
+
+```mermaid
+sequenceDiagram
+    actor St as Student
+    participant Ph as Phone Camera
+    participant App as TechFix (main.tsx)
+    participant Auth as Supabase Auth
+    participant P as StudentPortal
+    participant DB as Supabase / Postgres
+
+    St->>Ph: Scan station QR sticker
+    Ph->>App: Open /?lab=3&station=5
+    App->>App: persistStationTicketIntent() → localStorage
+
+    alt Not signed in
+        App-->>St: Show sign in / sign up
+        St->>Auth: Sign up or sign in
+        Note over Auth,App: Email-confirm redirect strips ?lab&station,<br/>but the intent is safe in localStorage
+        Auth-->>App: Session established
+    end
+
+    App->>P: Mount StudentPortal
+    P->>P: readStationTicketIntent() (URL → localStorage)
+    P->>DB: getStations(lab 3)
+    DB-->>P: stations
+    P->>P: Pre-select lab 3 + station 5, open report form
+    P-->>St: "📷 Scanned a station QR" — pick issue + describe
+    St->>P: Submit
+    P->>DB: createTicket({ lab 3, station 5, category, issue })
+    P->>P: clearStationTicketIntent() (URL + localStorage)
+```
+
+> **Generation side:** IT staff open a station in the Lab Map and `StationQrPanel`
+> renders/prints the label via `buildStationTicketUrl()`. The QR encodes the URL
+> the portal is served from — print from the deployed (or LAN) address, not
+> `localhost`.
 
 ---
 
