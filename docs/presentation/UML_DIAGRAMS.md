@@ -18,9 +18,10 @@ connect to ovals (use cases) inside the system boundary.
 ```mermaid
 flowchart LR
     student([👤 Student]):::actor
+    faculty([👤 CPE Faculty]):::actor
     nas([👤 NAS Staff]):::actor
     it([👤 IT Staff]):::actor
-    faculty([👤 CPE Faculty]):::actor
+    admin([👤 Admin]):::actor
 
     subgraph TechFix["TechFix System"]
         direction TB
@@ -31,21 +32,28 @@ flowchart LR
         uc5(["Claim ticket"])
         uc6(["Forward to IT"])
         uc7(["Resolve ticket"])
-        uc8(["View IT queue"])
-        uc9(["Monitor lab status"])
+        uc8(["View all tickets"])
+        uc9(["Assign / reassign"])
+        uc10(["Manage labs & stations"])
+        uc11(["Manage users & roles"])
+        uc12(["Review history / logs"])
     end
 
     student --- uc1 & uc2 & uc3
+    faculty --- uc1 & uc2 & uc3
     nas --- uc1 & uc4 & uc5 & uc6 & uc7
-    it --- uc1 & uc8 & uc5 & uc7
-    faculty --- uc1 & uc9
+    it --- uc1 & uc8 & uc5 & uc9 & uc7 & uc10 & uc12
+    admin --- uc1 & uc8 & uc11 & uc12
 
     classDef actor fill:#e3f2fd,stroke:#1565c0,stroke-width:2px;
 ```
 
-> **Slide tip:** the *Student* path (Sign in → Report → Track) is the only one
-> fully built today. Highlight it in green on the slide; show the staff paths in
-> a lighter shade as "designed."
+> **Slide tip:** all four role portals — Student, NAS, IT, and Admin — exist and
+> route by role in `App.tsx`. The staff and admin workflows are prototype-level
+> and still need live-schema/RLS verification before production (see the README).
+> The **student report → track** path is the most complete, so lead your live
+> demo with it. This mirrors the fuller use-case diagram in
+> [../ARCHITECTURE.md](../ARCHITECTURE.md#use-case-diagram).
 
 ---
 
@@ -223,9 +231,8 @@ erDiagram
 ```
 
 > This reflects the **deployed** schema (verified against the Supabase table
-> view). It supersedes the older "intended" model in
-> [../DATA_MODEL.md](../DATA_MODEL.md), which still describes a `reported_by`
-> column and a separate `ticket_assignments` table that the live database does
-> not have.
+> view). For the authoritative column-level schema, types, RLS intent, and the
+> guarded workflow RPCs, see [../DATA_MODEL.md](../DATA_MODEL.md) — this ERD is
+> consistent with it.
 
 > Full column-level schema, types, and RLS notes: [../DATA_MODEL.md](../DATA_MODEL.md).
