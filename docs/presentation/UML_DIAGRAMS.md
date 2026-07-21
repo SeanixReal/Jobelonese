@@ -18,9 +18,10 @@ connect to ovals (use cases) inside the system boundary.
 ```mermaid
 flowchart LR
     student([👤 Student]):::actor
+    faculty([👤 CPE Faculty]):::actor
     nas([👤 NAS Staff]):::actor
     it([👤 IT Staff]):::actor
-    faculty([👤 CPE Faculty]):::actor
+    admin([👤 Admin]):::actor
 
     subgraph TechFix["TechFix System"]
         direction TB
@@ -31,21 +32,28 @@ flowchart LR
         uc5(["Claim ticket"])
         uc6(["Forward to IT"])
         uc7(["Resolve ticket"])
-        uc8(["View IT queue"])
-        uc9(["Monitor lab status"])
+        uc8(["View all tickets"])
+        uc9(["Assign / reassign"])
+        uc10(["Manage labs & stations"])
+        uc11(["Manage users & roles"])
+        uc12(["Review history / logs"])
     end
 
     student --- uc1 & uc2 & uc3
+    faculty --- uc1 & uc2 & uc3
     nas --- uc1 & uc4 & uc5 & uc6 & uc7
-    it --- uc1 & uc8 & uc5 & uc7
-    faculty --- uc1 & uc9
+    it --- uc1 & uc8 & uc5 & uc9 & uc7 & uc10 & uc12
+    admin --- uc1 & uc8 & uc11 & uc12
 
     classDef actor fill:#e3f2fd,stroke:#1565c0,stroke-width:2px;
 ```
 
-> **Slide tip:** the *Student* path (Sign in → Report → Track) is the only one
-> fully built today. Highlight it in green on the slide; show the staff paths in
-> a lighter shade as "designed."
+> **Slide tip:** all four role portals — Student, NAS, IT, and Admin — exist and
+> route by role in `App.tsx`. The staff and admin workflows are prototype-level
+> and still need live-schema/RLS verification before production (see the README).
+> The **student report → track** path is the most complete, so lead your live
+> demo with it. This mirrors the fuller use-case diagram in
+> [../ARCHITECTURE.md](../ARCHITECTURE.md#use-case-diagram).
 
 ---
 
@@ -65,33 +73,34 @@ classDiagram
         +string program
     }
     class Ticket {
-        +uuid id
-        +string ticket_code
-        +uuid reported_by
-        +uuid lab_id
-        +uuid station_id
+        +string id
+        +uuid user_id
+        +int8 lab_id
+        +int8 station_id
         +string category
-        +string description
-        +TicketPriority priority
-        +TicketStatus status
-        +HandlerRole current_handler
+        +string issue
+        +string priority
+        +string status
+        +string current_handler
+        +uuid assigned_to
+        +uuid escalated_by
+        +string resolution_notes
     }
     class Lab {
-        +uuid id
+        +int8 id
         +string name
-        +string location
-        +int station_count
     }
     class Station {
-        +uuid id
-        +uuid lab_id
-        +int station_number
-        +string status
+        +int8 id
+        +int8 lab_id
+        +string station_number
     }
-    class TicketAssignment {
-        +uuid id
-        +uuid ticket_id
-        +uuid assigned_to
+    class TicketHistory {
+        +int4 id
+        +string ticket_id
+        +string action
+        +uuid performed_by
+        +string details
     }
     class DataAccess {
         <<service: lib.ts>>
@@ -109,12 +118,13 @@ classDiagram
         +getStations() Station[]
     }
 
-    User "1" --> "0..*" Ticket : reports
+    User "1" --> "0..*" Ticket : reports (user_id)
+    User "1" --> "0..*" Ticket : handles (assigned_to)
     Lab "1" --> "0..*" Station : has
     Lab "1" --> "0..*" Ticket : locates
     Station "0..1" --> "0..*" Ticket : at
-    Ticket "1" --> "0..*" TicketAssignment : via
-    User "1" --> "0..*" TicketAssignment : assigned
+    Ticket "1" --> "0..*" TicketHistory : logs
+    User "1" --> "0..*" TicketHistory : performed_by
     DataAccess ..> User : reads/writes
     DataAccess ..> Ticket : reads/writes
 ```
@@ -141,9 +151,9 @@ sequenceDiagram
     St->>P: Select lab
     P->>L: getStations(labId)
     L-->>P: stations
-    St->>P: Category + description → Submit
-    P->>L: createTicket({ lab, station?, category, description })
-    L->>DB: INSERT INTO tickets (reported_by = auth.uid())
+    St->>P: Category + issue → Submit
+    P->>L: createTicket({ lab, station?, category, issue })
+    L->>DB: INSERT INTO tickets (user_id = auth.uid())
     DB-->>L: new ticket row
     P->>L: refresh (loadAll)
     L-->>P: updated ticket list
@@ -154,54 +164,75 @@ sequenceDiagram
 
 ## 4. Entity-Relationship Diagram (ERD)
 
-The database backbone — how a ticket links to the student, lab, and station.
+The database backbone as it exists **live in Supabase** — how a ticket links to
+the student, lab, station, and its audit trail. `assigned_to`, `escalated_by`,
+and `ticket_history.performed_by` all reference `users(id)`.
 
 ```mermaid
 erDiagram
     AUTH_USERS ||--|| USERS : "1:1 (id)"
-    USERS ||--o{ TICKETS : "reports"
+    USERS ||--o{ TICKETS : "reports (user_id)"
+    USERS ||--o{ TICKETS : "handles (assigned_to)"
     LABS ||--o{ STATIONS : "has"
     LABS ||--o{ TICKETS : "located in"
     STATIONS ||--o{ TICKETS : "at (optional)"
-    TICKETS ||--o{ TICKET_ASSIGNMENTS : "assigned via"
-    USERS ||--o{ TICKET_ASSIGNMENTS : "assigned to"
+    TICKETS ||--o{ TICKET_HISTORY : "logs"
+    USERS ||--o{ TICKET_HISTORY : "performed_by"
 
     USERS {
-        uuid id PK
-        string email
-        string fullname
-        string role "student|nas|it|cpe_faculty"
-        string student_or_staff_id
-        string program
+        uuid id PK "FK auth.users.id"
+        varchar email UK
+        varchar fullname
+        varchar role
+        text student_or_staff_id
+        text program
+        timestamptz createdat
+        timestamptz updatedat
+        timestamptz created_at
     }
     LABS {
-        uuid id PK
-        string name
-        string location
-        int station_count
+        int8 id PK
+        varchar name UK
+        timestamptz created_at
     }
     STATIONS {
-        uuid id PK
-        uuid lab_id FK
-        int station_number
-        string status "operational|flagged|offline"
+        int8 id PK
+        int8 lab_id FK
+        varchar station_number
+        timestamptz created_at
     }
     TICKETS {
-        uuid id PK
-        string ticket_code
-        uuid reported_by FK
-        uuid lab_id FK
-        uuid station_id FK
-        string category
-        string priority "normal|high"
-        string status "open|in_progress|resolved"
-        string current_handler "nas|it"
-    }
-    TICKET_ASSIGNMENTS {
-        uuid id PK
-        uuid ticket_id FK
+        varchar id PK
+        uuid user_id FK
+        text issue
+        varchar status
+        int8 lab_id FK
+        int8 station_id FK
+        text category
+        text priority
+        text current_handler
         uuid assigned_to FK
+        timestamptz created_at
+        timestamptz resolved_at
+        timestamptz escalated_at
+        uuid escalated_by FK
+        text resolution_notes
+        text internal_notes
+        text closed_reason
+    }
+    TICKET_HISTORY {
+        int4 id PK
+        varchar ticket_id FK
+        text action
+        uuid performed_by FK
+        text details
+        timestamptz created_at
     }
 ```
+
+> This reflects the **deployed** schema (verified against the Supabase table
+> view). For the authoritative column-level schema, types, RLS intent, and the
+> guarded workflow RPCs, see [../DATA_MODEL.md](../DATA_MODEL.md) — this ERD is
+> consistent with it.
 
 > Full column-level schema, types, and RLS notes: [../DATA_MODEL.md](../DATA_MODEL.md).
