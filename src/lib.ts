@@ -64,6 +64,57 @@ export function getAuthRedirectState(): AuthRedirectState {
   return type === "signup" ? "verification" : null;
 }
 
+// =========================================================
+// STATION QR DEEP LINKS
+// =========================================================
+// A printable QR sticker on each PC encodes a link back to the app with the
+// lab (and optional station) in the query string. Scanning it with a phone
+// camera opens TechFix and pre-fills the "Report an issue" form for that exact
+// computer. See buildStationTicketUrl / readStationTicketIntent below.
+export interface StationTicketIntent {
+  labId: string;
+  stationId: string | null;
+}
+
+/** Build the absolute URL a station QR code should encode. */
+export function buildStationTicketUrl(labId: number | string, stationId?: number | string | null): string {
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  const pathname = typeof window !== "undefined" ? window.location.pathname : "/";
+  const params = new URLSearchParams();
+  params.set("lab", String(labId));
+  if (stationId !== undefined && stationId !== null && String(stationId) !== "") {
+    params.set("station", String(stationId));
+  }
+  return `${origin}${pathname}?${params.toString()}`;
+}
+
+/**
+ * Read a station/lab "report here" intent from the current URL, if present.
+ * Only returns positive integer ids, so a malformed link is ignored rather
+ * than pre-selecting something invalid.
+ */
+export function readStationTicketIntent(): StationTicketIntent | null {
+  if (typeof window === "undefined") return null;
+
+  const params = new URLSearchParams(window.location.search);
+  const labParam = params.get("lab");
+  if (!labParam || !/^\d+$/.test(labParam)) return null;
+
+  const stationParam = params.get("station");
+  const stationId = stationParam && /^\d+$/.test(stationParam) ? stationParam : null;
+  return { labId: labParam, stationId };
+}
+
+/** Remove the lab/station params from the URL after the intent is consumed. */
+export function clearStationTicketIntent(): void {
+  if (typeof window === "undefined") return;
+
+  const url = new URL(window.location.href);
+  url.searchParams.delete("lab");
+  url.searchParams.delete("station");
+  window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+}
+
 export type RealtimeTable = "users" | "labs" | "stations" | "tickets" | "ticket_history";
 
 export interface RealtimeSubscription {
