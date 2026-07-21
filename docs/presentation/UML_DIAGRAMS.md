@@ -78,8 +78,8 @@ classDiagram
     class Ticket {
         +string id
         +uuid user_id
-        +int8 lab_id
-        +int8 station_id
+        +int lab_id
+        +int station_id
         +string category
         +string issue
         +string priority
@@ -90,12 +90,12 @@ classDiagram
         +string resolution_notes
     }
     class Lab {
-        +int8 id
+        +int id
         +string name
     }
     class Station {
-        +int8 id
-        +int8 lab_id
+        +int id
+        +int lab_id
         +string station_number
     }
     class TicketHistory {
@@ -239,13 +239,13 @@ erDiagram
         timestamptz created_at
     }
     LABS {
-        int8 id PK
+        int id PK
         varchar name UK
         timestamptz created_at
     }
     STATIONS {
-        int8 id PK
-        int8 lab_id FK
+        int id PK
+        int lab_id FK
         varchar station_number
         timestamptz created_at
     }
@@ -254,8 +254,8 @@ erDiagram
         uuid user_id FK
         text issue
         varchar status
-        int8 lab_id FK
-        int8 station_id FK
+        int lab_id FK
+        int station_id FK
         text category
         text priority
         text current_handler
