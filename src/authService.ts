@@ -1,19 +1,30 @@
-import supabase from './CreateClient';
+import { supabase } from './lib';
 
 export interface UserData {
   id?: string;
   email: string;
   fullname?: string; // ✅ Aligned to lowercase match physical table column
-  role?: 'student' | 'nas' | 'it' | 'cpe_faculty'; // ✅ Aligned to match underscore used in DB
+  role?: 'student' | 'nas' | 'it' | 'cpe_faculty' | 'admin'; // ✅ Aligned to match underscore used in DB
+  student_or_staff_id?: string | null;
+  program?: string | null;
   created_at?: string; // ✅ Aligned to snake_case table column
 }
 
-function buildFallbackProfile(userId: string, email: string, fullname: string, role: string): UserData {
+function buildFallbackProfile(
+  userId: string,
+  email: string,
+  fullname: string,
+  role: string,
+  studentOrStaffId?: string | null,
+  program?: string | null
+): UserData {
   return {
     id: userId,
     email,
     fullname,
     role: role as UserData['role'],
+    student_or_staff_id: studentOrStaffId ?? null,
+    program: program ?? null,
     created_at: new Date().toISOString(),
   };
 }
@@ -38,7 +49,7 @@ function toUserFriendlyAuthError(error: unknown): Error {
     if (message.includes('User already registered')) {
       return new Error('This email is already registered. Please sign in instead.');
     }
-    
+
     return new Error(message || 'A database or server error occurred during authentication.');
   }
   return new Error('An unexpected connection error occurred.');
@@ -49,7 +60,6 @@ export async function signUp(
   email: string,
   password: string,
   fullName: string,
-  role: string,
   studentOrStaffId?: string,
   program?: string
 ) {
@@ -60,7 +70,6 @@ export async function signUp(
       options: {
         data: {
           full_name: fullName,
-          role,
           student_or_staff_id: studentOrStaffId ?? null,
           program: program ?? null,
         },
@@ -71,7 +80,14 @@ export async function signUp(
     if (!authData.user) throw new Error('User creation failed');
 
     // Safe fallback profile matching the interface structure
-    const profile = buildFallbackProfile(authData.user.id, email, fullName, role);
+    const profile = buildFallbackProfile(
+      authData.user.id,
+      email,
+      fullName,
+      'student',
+      studentOrStaffId,
+      program
+    );
 
     return { success: true, user: authData.user, profile };
   } catch (error) {
@@ -102,7 +118,9 @@ export async function signIn(email: string, password: string) {
         data.user.id,
         data.user.email ?? email,
         (data.user.user_metadata?.full_name as string | undefined) ?? '',
-        (data.user.user_metadata?.role as string | undefined) ?? 'student'
+        'student',
+        (data.user.user_metadata?.student_or_staff_id as string | undefined) ?? null,
+        (data.user.user_metadata?.program as string | undefined) ?? null
       );
       console.warn('Profile lookup skipped; using fallback profile data.', profileError);
       return { success: true, user: data.user, profile: fallbackProfile };
@@ -150,9 +168,16 @@ export async function getUserProfile(userId: string): Promise<UserData | null> {
 // UPDATE - Update user profile
 export async function updateUserProfile(userId: string, updates: Partial<UserData>) {
   try {
+    const safeUpdates: Partial<UserData> = {};
+    if (updates.fullname !== undefined) safeUpdates.fullname = updates.fullname;
+    if (updates.student_or_staff_id !== undefined) {
+      safeUpdates.student_or_staff_id = updates.student_or_staff_id;
+    }
+    if (updates.program !== undefined) safeUpdates.program = updates.program;
+
     const { data, error } = await supabase
       .from('users')
-      .update(updates)
+      .update(safeUpdates)
       .eq('id', userId)
       .select();
 

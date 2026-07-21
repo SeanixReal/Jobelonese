@@ -1,6 +1,6 @@
 import TicketCard, { type Ticket } from "./ticketcard";
 
-export type View = "home" | "signin" | "signup" | "portal";
+export type View = "home" | "signin" | "signup" | "reset-password" | "portal";
 
 interface HomeProps {
   goTo: (view: View) => void;
@@ -19,9 +19,9 @@ interface Step {
 }
 
 const steps: Step[] = [
-  { num: "01 / SUBMIT", title: "Scan or report", body: "Scan the QR code at any station, or submit online in one click — no login required to flag an issue." },
-  { num: "02 / TRACK", title: "Watch it move", body: "IT staff see it hit the live dashboard instantly. You watch the same ticket move from open to in progress." },
-  { num: "03 / RESOLVE", title: "Get confirmation", body: "Once it's fixed, the ticket closes with a timestamp — logged for maintenance history, not lost in a chat thread." },
+  { num: "01 / SUBMIT", title: "Student submits a ticket", body: "The student reports the issue online - just provide station, category, and what's wrong." },
+  { num: "02 / CLAIM", title: "NAS claims it", body: "Network Administration Staff on duty claim the ticket from the queue and try to resolve it on the spot." },
+  { num: "03 / ESCALATE", title: "IT steps in if needed", body: "If NAS can't fix it, the ticket is forwarded to the IT administrator, who takes it from there." },
 ];
 
 interface AudienceCard {
@@ -37,12 +37,6 @@ const audience: AudienceCard[] = [
   { tag: "Monitors classes", title: "Cpe faculty", body: "Check a lab's status before a session and report equipment issues found mid-class." },
 ];
 
-const businessCards: Step[] = [
-  { num: "COST", title: "Running it", body: "Hosting, ongoing maintenance, and cybersecurity for a system handling account and lab data." },
-  { num: "REVENUE", title: "Sustaining it", body: "Initial investment plus a SaaS subscription model for continued access and support." },
-  { num: "ADVANTAGE", title: "Why it sticks", body: "Built specifically for computer lab operations, integrated into existing CIT-U workflows, and mobile-friendly." },
-];
-
 export default function Home({ goTo }: HomeProps) {
   return (
     <div>
@@ -54,7 +48,6 @@ export default function Home({ goTo }: HomeProps) {
         <div className="nav-links">
           <a href="#how">How it works</a>
           <a href="#audience">Who it's for</a>
-          <a href="#cost">Pricing</a>
         </div>
         <div className="nav-actions">
           <button className="btn btn-ghost" onClick={() => goTo("signin")}>
@@ -137,22 +130,6 @@ export default function Home({ goTo }: HomeProps) {
             <div className="audience-card" key={card.title}>
               <div className="audience-tag">{card.tag}</div>
               <h4>{card.title}</h4>
-              <p>{card.body}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section id="cost">
-        <div className="section-head">
-          <div className="section-label">The business side</div>
-          <h2 className="section-title">Cost structure & revenue stream</h2>
-        </div>
-        <div className="steps">
-          {businessCards.map((card) => (
-            <div className="step" key={card.num}>
-              <div className="step-num">{card.num}</div>
-              <h3>{card.title}</h3>
               <p>{card.body}</p>
             </div>
           ))}

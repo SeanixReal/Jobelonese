@@ -1,165 +1,157 @@
-# TechFix Authentication Setup Guide
+# TechFix Authentication and Supabase Setup
 
-## Overview
-This guide explains how to set up authentication and CRUD operations for the TechFix application using Supabase.
+This guide describes the authentication flow currently implemented in the TechFix prototype. The
+database migration is deliberately separate from the app so it can be reviewed and run only against
+the intended Supabase project.
 
-## What's Been Implemented
+## Environment variables
 
-### 1. **Environment Variables (.env.local)**
-- Securely stores Supabase credentials
-- Already created with your API keys
-- **Important:** Never commit `.env.local` to version control (already in .gitignore)
+Create an ignored `.env.local` file in the repository root:
 
-### 2. **Auth Service (src/authService.ts)**
-Implements full CRUD operations:
-
-#### CREATE
-- `signUp(email, password, fullName, role)` - Register new user
-  - Creates auth user in Supabase Auth
-  - Stores user profile in database
-
-#### READ
-- `signIn(email, password)` - Authenticate user and fetch profile
-- `getCurrentUser()` - Get current authenticated user
-- `getUserProfile(userId)` - Fetch user profile by ID
-
-#### UPDATE
-- `updateUserProfile(userId, updates)` - Update user profile information
-
-#### DELETE
-- `deleteUserAccount(userId)` - Delete user account and associated data
-- `signOut()` - Sign out current user
-
-### 3. **Updated Components**
-
-**src/signin.tsx**
-- Integrated auth service for login
-- Added error handling
-- Added loading states
-- Form validation
-
-**src/signup.tsx**
-- Integrated auth service for registration
-- Added error handling
-- Added loading states
-- Form validation
-
-## Setup Instructions
-
-### Step 1: Set Up Supabase Database
-1. Go to [Supabase Console](https://app.supabase.com)
-2. Open your TechFix project
-3. Go to SQL Editor
-4. Create a new query and copy the entire content from `DATABASE_SETUP.sql`
-5. Execute the query to create the `users` table with security policies
-
-### Step 2: Verify Environment Variables
-The `.env.local` file should contain:
-```
-VITE_SUPABASE_URL=https://hdqysptfslyqihusgprb.supabase.co
-VITE_SUPABASE_ANON_KEY=sb_publishable_SIy8mURo4FoBC2TdqN4nxw__tdKM_1H
+```text
+VITE_SUPABASE_URL=https://<your-project>.supabase.co
+VITE_SUPABASE_ANON_KEY=<your-publishable-key>
+# Production only: set this in Vercel to keep auth emails on the production app.
+# Omit it locally to use the current localhost origin.
+# VITE_AUTH_REDIRECT_URL=https://techfix-dev.vercel.app/
 ```
 
-### Step 3: Test the Authentication
-1. Start the dev server: `npm run dev`
-2. Navigate to the signup page
-3. Create a new account
-4. Check Supabase console to verify:
-   - User created in Auth section
-   - Profile created in users table
-5. Sign out and test login with your credentials
+The repository also has an ignored `.env` file in some local checkouts. Never commit real keys, and do
+not place a service-role/secret key or SMTP credentials in a `VITE_` variable.
 
-## Security Features
+## Current implementation
 
-✅ **Credentials Protection**
-- API keys stored in environment variables
-- `.env.local` excluded from version control
+`src/lib.ts` is the canonical Supabase client and data-access layer used by `App.tsx`, the auth
+forms, and the portal components. `src/authService.ts` remains in the repository only as a legacy
+compatibility module; new call sites must use `src/lib.ts`.
 
-✅ **Row Level Security (RLS)**
-- Users can only view/edit their own profiles
-- Enforced at database level
+The legacy `authService.ts` functions are:
 
-✅ **Auth Best Practices**
-- Passwords handled by Supabase (never stored in frontend)
-- Session management handled by Supabase client
-- Error messages sanitized
+| Function | Behavior |
+| --- | --- |
+| `signUp(email, password, fullName, studentOrStaffId, program)` | Creates a Supabase Auth user with non-privileged profile metadata. The database assigns the `student` role. |
+| `signIn(email, password)` | Authenticates and attempts to read the matching `public.users` row. |
+| `getCurrentUser()` | Reads the current Supabase Auth user. |
+| `getUserProfile(userId)` | Reads one profile row from `public.users`. |
+| `updateUserProfile(userId, updates)` | Updates the caller's profile row if RLS permits it. |
+| `signOut()` | Signs out through Supabase Auth. |
 
-## API Reference
+There is no `deleteUserAccount()` function in `src/authService.ts`. The Admin portal's
+`deleteUser()` function deletes a profile row from `public.users`; it does not delete the matching
+`auth.users` account.
+## Database setup
 
-### signUp(email, password, fullName, role)
-```typescript
-try {
-  const result = await signUp(
-    'student@cit.edu',
-    'password123',
-    'Juan Dela Cruz',
-    'student'
-  );
-  console.log(result.user, result.profile);
-} catch (error) {
-  console.error('Signup failed:', error);
-}
+`DATABASE_SETUP.sql` creates only the initial `users` table and its basic policies. It does not create
+the complete application schema. The deployed database currently exposes these application tables:
+
+- `users`
+- `labs`
+- `stations`
+- `tickets`
+- `ticket_history`
+
+There is no `ticket_assignments` table; ticket assignment is stored in `tickets.assigned_to`.
+See [docs/DATA_MODEL.md](docs/DATA_MODEL.md) for the live column names and relationships.
+
+`SUPABASE_REALTIME_AUTH_MIGRATION.sql` defines the `auth.users` profile-insert trigger. It copies only
+non-privileged profile fields and always creates the public row with `role = 'student'`. The same
+review-only migration repairs existing `@cit.edu` Auth accounts that do not yet have a matching
+`public.users` row. Do not create that row from the browser; run the SQL in the intended project.
+
+## Authentication flow
+
+1. The signup form validates the fields and requires an exact `@cit.edu` address.
+2. `src/lib.ts` repeats the domain check before calling Supabase Auth.
+3. Supabase Auth creates the account and stores the non-privileged details in user metadata.
+4. The database trigger creates the matching `public.users` row with `role = 'student'`.
+5. When email confirmation is enabled, the form tells the user to check their CIT-U inbox before
+   signing in.
+6. `App.tsx` observes the Auth session, loads the server-owned profile, and routes the session to the student,
+   NAS, IT, or Admin portal.
+
+If the Auth session exists but the profile row is missing, the app shows an account-setup error instead
+of silently opening the student portal. An administrator must review and run the profile-repair section
+of `SUPABASE_REALTIME_AUTH_MIGRATION.sql`, then the user can retry.
+
+## Password recovery
+
+The sign-in page's **Forgot password?** link now uses
+`supabase.auth.resetPasswordForEmail()` through `src/lib.ts`. The reset email returns to the app's
+current origin and path, where `App.tsx` handles Supabase's `PASSWORD_RECOVERY` event and shows the
+new-password form. The form saves the new password with `supabase.auth.updateUser({ password })`,
+then signs the recovery session out before returning the user to sign-in.
+
+In **Authentication > URL Configuration > Redirect URLs**, allow every URL that can host the app,
+including both common local Vite URLs and the deployed URL:
+
+```text
+http://localhost:5173/
+http://127.0.0.1:5173/
+https://<your-deployed-app-host>/
 ```
 
-### signIn(email, password)
-```typescript
-try {
-  const result = await signIn('student@cit.edu', 'password123');
-  console.log('Signed in as:', result.profile.fullName);
-} catch (error) {
-  console.error('Login failed:', error);
-}
+The reset link cannot return to a URL that is not on this allowlist. Configure the Auth email
+template to use Supabase's reset-link variable, and use custom SMTP as described below so reset and
+verification messages can reach real `@cit.edu` inboxes. The app does not contain SMTP credentials.
+
+The server-side domain rule and Realtime publication setup are in
+[SUPABASE_REALTIME_AUTH_MIGRATION.sql](SUPABASE_REALTIME_AUTH_MIGRATION.sql). The SQL creates a
+database trigger that blocks non-`@cit.edu` Auth users and a Postgres function that can be selected
+in Supabase's **Auth > Hooks > Before User Created** setting for a clearer API error.
+
+## Email verification and SMTP
+
+For the intended Supabase project:
+
+1. In **Authentication > Providers > Email**, enable email confirmations.
+2. In **Authentication > SMTP**, enable custom SMTP and enter the provider's host, port, username,
+   password, sender email, and sender name. Keep these values in Supabase settings; never put SMTP
+   credentials in `VITE_` variables or the repository.
+3. In **Authentication > Email Templates > Confirm signup**, keep a confirmation link that uses
+   Supabase's `{{ .ConfirmationURL }}` variable. If the template builds the URL manually, use the
+   configured redirect variable and make sure it matches the deployed app.
+4. In Vercel's production environment, set `VITE_AUTH_REDIRECT_URL` to
+   `https://techfix-dev.vercel.app/`. In **Authentication > URL Configuration**, set the production
+   Site URL and add that URL and the local development URL as allowed redirect URLs. The app falls
+   back to the current browser origin when `VITE_AUTH_REDIRECT_URL` is omitted.
+5. In **Authentication > Hooks > Before User Created**, select
+   `public.hook_restrict_signup_by_email_domain` after running the migration.
+
+Supabase's built-in SMTP is intended for testing and only sends to pre-authorized project team
+addresses. A real CIT-U rollout needs a custom SMTP provider with a verified sender/domain.
+After a signup returns without a session, the form offers **Resend verification email**. That calls
+Supabase Auth's signup-resend endpoint and remains subject to the provider's delivery and rate limits.
+
+## Realtime queue updates
+
+The portals subscribe to `tickets` changes (and the related `users`, `labs`, `stations`, and
+`ticket_history` tables where needed) and re-run the existing RLS-scoped queries when an event
+arrives. Run `SUPABASE_REALTIME_AUTH_MIGRATION.sql` in the intended project to add those tables to
+the `supabase_realtime` publication. RLS remains the authorization boundary for Realtime payloads.
+
+## Role and station safeguards
+
+- The signup form has no role selector or role passcodes. Every new account starts as `student`.
+- The migration's `private.enforce_user_role_assignment()` trigger rejects non-admin role assignment
+  and role changes, including direct profile-table calls. The Admin portal is the only UI that offers
+  role changes.
+- The migration also deduplicates stations, re-points ticket references to the retained station row,
+  and creates a unique `(lab_id, lower(btrim(station_number)))` index. The client normalizes station
+  numbers and handles duplicate insert errors.
+- `getMyTickets()` now adds the current user's `user_id` filter; the live RLS policy must still prevent
+  one user from reading another user's tickets.
+- Existing accounts created before the domain rule was installed should be reviewed separately; the
+  database trigger blocks new Auth user creation but does not retroactively delete old accounts.
+
+## Verification checklist
+
+```bash
+npm install
+npm run dev
+npm run build
+npm run lint
 ```
 
-### updateUserProfile(userId, updates)
-```typescript
-try {
-  const result = await updateUserProfile(userId, {
-    fullName: 'Juan dela Cruz Updated',
-    role: 'nas'
-  });
-} catch (error) {
-  console.error('Update failed:', error);
-}
-```
-
-### deleteUserAccount(userId)
-```typescript
-try {
-  const result = await deleteUserAccount(userId);
-  console.log('Account deleted');
-} catch (error) {
-  console.error('Deletion failed:', error);
-}
-```
-
-## Troubleshooting
-
-### "User already exists" error during signup
-- The email is already registered
-- Try signing in instead
-- Use password reset if you forgot credentials
-
-### "Invalid login credentials"
-- Check your email and password
-- Ensure the user was created successfully in Supabase
-
-### CORS or API errors
-- Verify `.env.local` has correct Supabase URL and keys
-- Ensure Supabase project is active
-- Check browser console for detailed error messages
-
-### Database table doesn't exist
-- Run the DATABASE_SETUP.sql script in Supabase SQL Editor
-- Verify RLS policies are enabled
-
-## Next Steps
-
-1. ✅ Set up database schema (DATABASE_SETUP.sql)
-2. ✅ Configure environment variables (.env.local)
-3. ✅ Test signup and signin flows
-4. 📝 Add "Forgot Password" functionality
-5. 📝 Add email verification
-6. 📝 Add user profile management page
-7. 📝 Add logout functionality to main app
-
+Test a student and staff session separately. Confirm that profile creation, portal routing, ticket
+ownership, staff queue actions, and sign-out all work under the live RLS policies. Review the SQL
+migration and take a backup before applying its data cleanup to a project.
