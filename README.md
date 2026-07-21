@@ -34,13 +34,15 @@ npm install
 ```
 
 ### 3. Configure environment
-Create a `.env.local` in the repo root (Vite reads `VITE_`-prefixed vars):
+Copy `.env.example` to `.env.local` (Vite reads `VITE_`-prefixed vars) and fill in your
+Supabase project's URL and anon key:
+```bash
+cp .env.example .env.local
+```
 ```
 VITE_SUPABASE_URL=https://<your-project>.supabase.co
 VITE_SUPABASE_ANON_KEY=<your-anon-key>
 ```
-> There is not yet a committed `.env.example` — tracked in
-> [#25](https://github.com/SeanixReal/Jobelonese/issues/25).
 
 ### 4. Provision the database
 Run the SQL in [`DATABASE_SETUP.sql`](DATABASE_SETUP.sql) in the Supabase SQL Editor, then apply
